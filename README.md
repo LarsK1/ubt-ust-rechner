@@ -1,4 +1,4 @@
-# 🧾 USt-Reihengeschäfts-Rechner (Privates Repository) 🔒
+# 🧾 USt-Reihengeschäfts-Rechner
 
 Dieses private Repository 📦 enthält den Code für einen USt-Reihengeschäfts-Rechner, der im Rahmen meiner Bachelorarbeit entwickelt wurde. Die Anwendung basiert auf Streamlit 🚀.
 
