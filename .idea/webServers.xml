@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="5263b02b-dfd3-4e8f-97bd-20f96fa0b24d" name="Hetzner" url="https://ust.lars-kusch.de">
+        <fileTransfer rootFolder="/opt/streamlit" accessType="SFTP" host="ust.lars-kusch.de" port="22" sshConfigId="c13da24a-a1ff-499f-8b02-cfe5544dffbf" sshConfig="root@ust.lars-kusch.de:22 password">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" keepAliveTimeout="0" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>
