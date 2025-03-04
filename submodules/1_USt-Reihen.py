@@ -10,7 +10,7 @@ st.title("USt-Reihengeschäfte")
 st.subheader("Beteiligte Firmen und Länderauswahl")
 # Liste der verfügbaren Länder auf Deutsch
 laender = [_(country.name) for country in pycountry.countries]
-
+#Test
 # Anzahl der beteiligten Firmen festlegen
 anzahl_firmen = st.number_input("Anzahl der beteiligten Firmen:", min_value=1, step=1)
 
