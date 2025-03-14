@@ -8,7 +8,8 @@ st.title("USt-Reihengeschäfte")
 
 # Liste der verfügbaren Länder auf Deutsch
 laender = get_countries()
-#Test
+schritt = 0
+
 with st.expander("Grundlegende Daten"):
     st.subheader("Schritt 1: Beteiligte Firmen und Länderauswahl")
     # Anzahl der beteiligten Firmen festlegen
@@ -55,11 +56,14 @@ with st.expander("Grundlegende Daten"):
                             laender_ohne_eigenes,
                             key=f"land_abweichende_ust_id_{i}",
                         )
+            schritt = 1
+        else:
+            schritt = 0
     elif anzahl_firmen == 2:
         st.warning("Ein Reihengeschäft benötigt mindestens drei beteiligte Firmen.")
     elif anzahl_firmen < 2:
         st.error("Ein Handelsgeschäft benötigt mind. zwei beteiligte Firmen.")
-
-with st.expander("Bewegte und ruhende Lieferung"):
-    st.selectbox("Welche Firma transportiert die Ware?", laender_firmen)
-    st.selectbox("Welche Firma erhält die Ware?", laender_firmen)
+if schritt == 1:
+    with st.expander("Bewegte und ruhende Lieferung"):
+        st.selectbox("Welche Firma transportiert die Ware?", laender_firmen)
+        st.selectbox("Welche Firma erhält die Ware?", laender_firmen)
