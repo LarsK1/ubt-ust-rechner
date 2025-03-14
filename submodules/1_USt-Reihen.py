@@ -35,11 +35,11 @@ with st.expander("Grundlegende Daten"):
                     coulumn1, column2 = container_land.columns(
                         (
                             1,
-                            4,
+                            6,
                         )
                     )
                     if land.flag:
-                        coulumn1.image(land.flag, use_container_width=True)
+                        coulumn1.image(land.flag, width=100)
                     column2.write(
                         f"**{i+1}: {land.name} - {'EU' if land.EU else 'Drittland'}**"
                     )
@@ -60,8 +60,10 @@ with st.expander("Grundlegende Daten"):
         else:
             schritt = 0
     elif anzahl_firmen == 2:
+        schritt = 0
         st.warning("Ein Reihengeschäft benötigt mindestens drei beteiligte Firmen.")
     elif anzahl_firmen < 2:
+        schritt = 0
         st.error("Ein Handelsgeschäft benötigt mind. zwei beteiligte Firmen.")
 if schritt == 1:
     with st.expander("Bewegte und ruhende Lieferung"):
