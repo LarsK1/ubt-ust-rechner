@@ -137,12 +137,13 @@ if len(laender_firmen) > 2:
     dot = Digraph(
         comment="Geschäftsablauf", graph_attr={"rankdir": "LR"}
     )  # LR für Left-to-Right-Layout
-    dot.attr("node", shape="box")
-    for company in laender_firmen:
-        dot.node(str(company.identifier), str(company))
-        # if company.responsible_for_customs:
-        #    dot.node("customs", "Zollabwicklung", shape="diamond")
-        #    dot.edge("customs", str(company.identifier), style="dashed", color="green")
+    with dot.subgraph() as s:
+        s.attr("node", shape="box", rank="same")
+        for company in laender_firmen:
+            s.node(str(company.identifier), str(company).replace("-", "\n", 1))
+            # if company.responsible_for_customs:
+            #    dot.node("customs", "Zollabwicklung", shape="diamond")
+            #    dot.edge("customs", str(company.identifier), style="dashed", color="green")
 
     supplier = None
     reciever = None
@@ -166,7 +167,8 @@ if len(laender_firmen) > 2:
                 str(reciever.identifier),
                 "unmittelbare Warenbewegung",
                 style="bold",
-                color="orange",
+                color="blue",
+                constraint="false",
             )
             transport_edge = True
 
