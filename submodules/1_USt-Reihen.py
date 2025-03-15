@@ -4,10 +4,13 @@ from graphviz import Digraph
 
 st.title("USt-Reihengeschäfte")
 
+laender_firmen: list[Handelsstufe] = []
+
 # Liste der verfügbaren Länder auf Deutsch
 laender = get_countries()
 schritt = 0
 
+diagram = st.container()
 
 with st.expander("Grundlegende Daten"):
     st.subheader("Schritt 1: Beteiligte Firmen und Länderauswahl")
@@ -20,7 +23,6 @@ with st.expander("Grundlegende Daten"):
         # Länderauswahl für jede Firma
         if anzahl_firmen:
             st.subheader("Schritt 2: Wähle das Land für jede Firma")
-            laender_firmen = []
             for i in range(int(anzahl_firmen)):
                 if i == 0:
                     land = st.selectbox(f"Verkäufer:", laender, key=f"firma_{i}")
@@ -31,9 +33,18 @@ with st.expander("Grundlegende Daten"):
                         f"Zwischenhändler {i}:", laender, key=f"firma_{i}"
                     )
                 laender_firmen.append(Handelsstufe(land, i, int(anzahl_firmen)))
+            for i, land in enumerate(laender_firmen):
+                land: Handelsstufe
+                if i == 0:
+                    land.add_next_company_to_chain(land, laender_firmen[i + 1])
+                elif i == int(anzahl_firmen) - 1:
+                    land.add_previous_company_to_chain(land, laender_firmen[i - 1])
+                else:
+                    land.add_previous_company_to_chain(land, laender_firmen[i - 1])
+                    land.add_next_company_to_chain(land, laender_firmen[i + 1])
             st.divider()
             # Ausgabe der ausgewählten Länder
-            if laender_firmen:
+            if len(laender_firmen) > 0:
                 st.subheader("Schritt 3: Besondere Merkmale der Firmen")
                 for i, land in enumerate(laender_firmen):
                     land: Handelsstufe
@@ -89,7 +100,10 @@ if schritt == 1:
             "Welche Firma transportiert die Ware?", ["keine Auswahl"] + laender_firmen
         )
         if isinstance(transport_firma, Handelsstufe):
-            transport_firma.is_supplier = True
+            for firma in laender_firmen:
+                if firma.identifier == transport_firma.identifier:
+                    firma.is_supplier = True
+                    break
         if transport_firma != "keine Auswahl":
             erhaltende_firma_laender_moeglich = [
                 l for l in laender_firmen if l.identifier != transport_firma.identifier
@@ -102,10 +116,56 @@ if schritt == 1:
             ["keine Auswahl"] + erhaltende_firma_laender_moeglich,
         )
         if isinstance(erhaltende_firma, Handelsstufe):
-            erhaltende_firma.is_receiver = True
+            for firma in laender_firmen:
+                if firma.identifier == erhaltende_firma.identifier:
+                    firma.is_reciever = True
+                    break
 
         customs_import = st.selectbox(
             "Wer übernimmt die Zollabwicklung?", ["keine Auswahl"] + laender_firmen
         )
         if isinstance(customs_import, Handelsstufe):
-            customs_import.responsible_for_customs = True
+            for firma in laender_firmen:
+                if firma.identifier == customs_import.identifier:
+                    firma.responsible_for_customs = True
+                    break
+
+if len(laender_firmen) > 2:
+
+    dot = Digraph(
+        comment="Geschäftsablauf", graph_attr={"rankdir": "LR"}
+    )  # LR für Left-to-Right-Layout
+    dot.attr("node", shape="box")
+    for company in laender_firmen:
+        dot.node(str(company.identifier), str(company))
+        # if company.responsible_for_customs:
+        #    dot.node("customs", "Zollabwicklung", shape="diamond")
+        #    dot.edge("customs", str(company.identifier), style="dashed", color="green")
+
+    supplier = None
+    reciever = None
+    transport_edge = False
+    for company in laender_firmen:
+        if company.next_company:
+            dot.edge(
+                str(company.identifier),
+                str(company.next_company.identifier),
+                "Rechnung",
+                style="dashed",
+                color="orange",
+            )
+        if company.is_supplier:
+            supplier = company
+        elif company.is_reciever:
+            reciever = company
+        if supplier and reciever and not transport_edge:
+            dot.edge(
+                str(supplier.identifier),
+                str(reciever.identifier),
+                "unmittelbare Warenbewegung",
+                style="bold",
+                color="orange",
+            )
+            transport_edge = True
+
+    diagram.graphviz_chart(dot, use_container_width=True)
