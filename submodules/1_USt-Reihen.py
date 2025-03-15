@@ -1,5 +1,6 @@
 import streamlit as st
 from helpers.helpers import get_countries, Handelsstufe
+from helpers.fixed_header import st_fixed_container
 from graphviz import Digraph
 
 st.title("USt-Reihengeschäfte")
@@ -10,7 +11,7 @@ laender_firmen: list[Handelsstufe] = []
 laender = get_countries()
 schritt = 0
 
-diagram = st.container()
+diagram = st_fixed_container(mode="sticky", position="top", border=True, margin="0px")
 
 with st.expander("Grundlegende Daten"):
     st.subheader("Schritt 1: Beteiligte Firmen und Länderauswahl")
@@ -96,6 +97,7 @@ with st.expander("Grundlegende Daten"):
         st.error("Ein Handelsgeschäft benötigt mind. zwei beteiligte Firmen.")
 if schritt == 1:
     with st.expander("Bewegte und ruhende Lieferung"):
+        st.subheader("Schritt 4: Lieferung")
         transport_firma: Handelsstufe = st.selectbox(
             "Welche Firma transportiert die Ware?", ["keine Auswahl"] + laender_firmen
         )
@@ -120,7 +122,7 @@ if schritt == 1:
                 if firma.identifier == erhaltende_firma.identifier:
                     firma.is_reciever = True
                     break
-
+        st.divider()
         customs_import = st.selectbox(
             "Wer übernimmt die Zollabwicklung?", ["keine Auswahl"] + laender_firmen
         )
@@ -131,7 +133,7 @@ if schritt == 1:
                     break
 
 if len(laender_firmen) > 2:
-
+    diagram.subheader("Geschäftsablauf")
     dot = Digraph(
         comment="Geschäftsablauf", graph_attr={"rankdir": "LR"}
     )  # LR für Left-to-Right-Layout
