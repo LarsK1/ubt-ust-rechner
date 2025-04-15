@@ -23,11 +23,10 @@ class Handelsstufe:
 
     def __init__(self, country: Country, identifier: int = 0, max_identifier: int = 0):
         self.country = country
-        self.is_reciever = False
-        self.is_supplier = False
+        self.responsible_for_shippment = False
         self.responsible_for_customs = False
-        self.next_company: list[Handelsstufe] = []
-        self.previous_company: list[Handelsstufe] = []
+        self.next_company: Handelsstufe | None = None
+        self.previous_company: Handelsstufe | None = None
         self.identifier = identifier
         self.max_identifier = max_identifier
         if self.identifier > max_identifier:
@@ -39,7 +38,8 @@ class Handelsstufe:
 
     def __repr__(self):
         if self.identifier == 0:
-            return f"Verkäufer - {self.country}"
+            if not self.changed_vat:
+                return f"Verkäufer - {self.country}"
         elif self.identifier == self.max_identifier - 1:
             return f"Empfänger - {self.country}"
         else:
@@ -68,3 +68,62 @@ class Handelsstufe:
         self.new_country = new_country
         self.changed_vat = True
         return self
+
+    def find_start_company(self):
+        """
+        Finds the start company in the chain transaction.
+        """
+        if self.previous_company:
+            return self.previous_company.find_start_company()
+        else:
+            return self
+
+    def find_end_company(self):
+        """
+        Finds the end company in the chain transaction.
+        """
+        if self.next_company:
+            return self.next_company.find_end_company()
+        else:
+            return self
+
+    def find_shipping_company(self):
+        """
+        Finds the shipping company in the chain transaction. Function only works, when started in the first company.
+        """
+        if self.responsible_for_shippment:
+            return self
+        elif self.next_company:
+            return self.next_company.find_shipping_company()
+
+
+class Transaktion:
+    """
+    Represents a transaction in a chain transaction.
+    """
+
+    def __init__(self, start_company: Handelsstufe, end_company: Handelsstufe):
+        self.start_company: Handelsstufe = start_company
+        self.end_company: Handelsstufe = end_company
+        self.shipping_company: Handelsstufe = self.start_company.find_shipping_company()
+
+    def find_shipping_company(self):
+        """
+        Finds the shipping company in the chain transaction.
+        """
+        self.shipping_company = self.start_company.find_shipping_company()
+        return self.shipping_company
+
+    def get_ordered_chain_companies(self):
+        """
+        Returns the ordered chain companies.
+        """
+        companies = []
+        current_company = self.start_company
+        while current_company:
+            companies.append(current_company)
+            current_company = current_company.next_company
+        return companies
+
+    def includes_only_eu_countries(self):
+        return all(company.country.EU for company in self.get_ordered_chain_companies())
