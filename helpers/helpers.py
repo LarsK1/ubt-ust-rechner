@@ -38,12 +38,11 @@ class Handelsstufe:
 
     def __repr__(self):
         if self.identifier == 0:
-            if not self.changed_vat:
-                return f"Verkäufer - {self.country}"
+            return f"Verkäufer - {self.country}"
         elif self.identifier == self.max_identifier - 1:
             return f"Empfänger - {self.country}"
         else:
-            return f"Handelsstufe - {self.country}"
+            return f"Zwischenhändler - {self.country}"
 
     def add_previous_company_to_chain(self, company, previous_company):
         """
@@ -96,6 +95,15 @@ class Handelsstufe:
         elif self.next_company:
             return self.next_company.find_shipping_company()
 
+    def find_custom_company(self):
+        """
+        Finds the custom handling company in the chain transaction. Function only works, when started in the first company.
+        """
+        if self.responsible_for_customs:
+            return self
+        elif self.next_company:
+            return self.next_company.find_custom_company()
+
 
 class Transaktion:
     """
@@ -105,7 +113,8 @@ class Transaktion:
     def __init__(self, start_company: Handelsstufe, end_company: Handelsstufe):
         self.start_company: Handelsstufe = start_company
         self.end_company: Handelsstufe = end_company
-        self.shipping_company: Handelsstufe = self.start_company.find_shipping_company()
+        self.shipping_company: Handelsstufe | None = None
+        self.customs_company: Handelsstufe | None = None
 
     def find_shipping_company(self):
         """
@@ -113,6 +122,10 @@ class Transaktion:
         """
         self.shipping_company = self.start_company.find_shipping_company()
         return self.shipping_company
+
+    def find_custom_company(self):
+        self.customs_company = self.start_company.find_custom_company()
+        return self.customs_company
 
     def get_ordered_chain_companies(self):
         """
