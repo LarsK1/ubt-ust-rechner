@@ -1,6 +1,9 @@
-from helpers.countries import Country
-import pycountry
 import gettext
+from enum import Enum, auto
+
+import pycountry
+
+from helpers.countries import Country
 
 german = gettext.translation("iso3166-1", pycountry.LOCALES_DIR, languages=["de"])
 german.install()
@@ -14,6 +17,19 @@ def get_countries() -> list[Country]:
     for country in pycountry.countries:
         countries.append(Country(_(country.name), country.alpha_2))
     return countries
+
+
+class VatTreatmentType(Enum):
+    """Definiert mögliche umsatzsteuerliche Behandlungen einer Lieferung."""
+
+    TAXABLE_NORMAL = auto()  # Steuerpflichtig, Lieferant schuldet USt
+    TAXABLE_REVERSE_CHARGE = (
+        auto()
+    )  # Steuerpflichtig, Kunde schuldet USt (Reverse Charge)
+    EXEMPT_IC_SUPPLY = auto()  # Steuerfrei (Innergemeinschaftliche Lieferung)
+    EXEMPT_EXPORT = auto()  # Steuerfrei (Ausfuhr)
+    NOT_TAXABLE = auto()  # Nicht steuerbar (im betrachteten Land)
+    UNKNOWN = auto()
 
 
 class Handelsstufe:
@@ -37,15 +53,26 @@ class Handelsstufe:
         self.new_country: [Country] = None  # Type Hint hinzugefügt
 
     def __repr__(self):
+        # Behalte die ausführliche Repräsentation für Debugging etc. bei
+        role = self.get_role_name()  # Nutze die neue Methode
+        return f"{role} ({self.country.name} - {self.country.code})"
+
+    def get_role_name(self, long_name=False) -> str:
+        """Gibt einen kurzen Namen für die Rolle der Firma zurück."""
         if self.identifier == 0:
-            return f"Verkäufer - {self.country}"
+            return "Verkäufer"
         elif self.identifier == self.max_identifier - 1:
-            return f"Empfänger - {self.country}"
+            return "Empfänger"
         else:
+            # Unterscheidung zwischen erstem und weiteren Zwischenhändlern
             if self.identifier == 1:
-                return f"1. Zwischenhändler - {self.country}"
+                if long_name:
+                    return "1. Zwischenhändler"
+                return "1. ZH"
             else:
-                return f"{self.identifier}. Zwischenhändler - {self.country}"
+                if long_name:
+                    return f"{self.identifier}. Zwischenhändler"
+                return f"{self.identifier}. ZH"
 
     def add_previous_company_to_chain(self, company, previous_company):
         """
@@ -120,7 +147,6 @@ class Handelsstufe:
             return None
 
 
-# NEUE KLASSE: Lieferung
 class Lieferung:
     """
     Repräsentiert eine einzelne Lieferung innerhalb eines Reihengeschäfts.
@@ -129,57 +155,171 @@ class Lieferung:
     def __init__(self, lieferant: Handelsstufe, kunde: Handelsstufe):
         self.lieferant = lieferant
         self.kunde = kunde
-        self.is_moved_supply: bool = False  # Ist dies die bewegte Lieferung?
-        self.place_of_supply: [Country] = (
-            None  # Ort der Lieferung (wird später bestimmt)
-        )
-        # Weitere Attribute könnten sein: Steuerbehandlung (steuerbar, steuerfrei etc.)
+        self.is_moved_supply: bool = False
+        self.place_of_supply: [Country] = None
+        self.vat_treatment: VatTreatmentType = VatTreatmentType.UNKNOWN
+        self.invoice_note: [str] = None  # Hinweis für die Rechnung
+
+    def get_vat_treatment_display(self) -> str:
+        """Gibt eine benutzerfreundliche Zeichenkette für die Steuerbehandlung zurück."""
+        treatment = self.vat_treatment
+        # Verwende Ländercode für Kürze, "?" wenn Ort unbekannt
+        place_code = self.place_of_supply.code if self.place_of_supply else "?"
+
+        if treatment == VatTreatmentType.TAXABLE_NORMAL:
+            # Zeigt an, WO die Steuer anfällt
+            return f"Steuerpflichtig ({place_code})"
+        elif treatment == VatTreatmentType.TAXABLE_REVERSE_CHARGE:
+            # Der Hinweis auf RC reicht meist, Ort ist implizit der des Kunden
+            return f"Reverse Charge ({place_code})"
+        elif treatment == VatTreatmentType.EXEMPT_IC_SUPPLY:
+            return "Steuerfrei (IG)"
+        elif treatment == VatTreatmentType.EXEMPT_EXPORT:
+            return "Steuerfrei (Ausfuhr)"
+        elif treatment == VatTreatmentType.NOT_TAXABLE:
+            # Zeigt an, WO es nicht steuerbar ist
+            return f"Nicht steuerbar ({place_code})"
+        elif treatment == VatTreatmentType.UNKNOWN:
+            return "Unbekannt"
+        else:  # Fallback
+            return treatment.name  # Gibt den Enum-Namen aus, falls neu hinzugefügt
 
     def __repr__(self):
-        bewegt_status = (
-            "Bewegte Lieferung" if self.is_moved_supply else "Ruhende Lieferung"
+        """Erzeugt eine kompakte und lesbare Darstellung der Lieferung."""
+        # Kurze Darstellung für Lieferant und Kunde
+        lieferant_repr = (
+            f"{self.lieferant.get_role_name()} ({self.lieferant.country.code})"
         )
-        return f"Lieferung von {self.lieferant} an {self.kunde} ({bewegt_status})"
+        kunde_repr = f"{self.kunde.get_role_name()} ({self.kunde.country.code})"
 
-    def determine_place_of_supply(self, bewegte_lieferung):
+        # Status (Bewegt/Ruhend)
+        status_repr = "Bewegt" if self.is_moved_supply else "Ruhend"
+
+        # Ort (nur Ländercode)
+        ort_repr = (
+            f"Ort: {self.place_of_supply.code}" if self.place_of_supply else "Ort: ?"
+        )
+
+        # Kurze Steuerbehandlung
+        vat_repr = self.get_vat_treatment_display()
+
+        # Zusammenfügen mit Trennzeichen für Lesbarkeit
+        return f"{lieferant_repr} -> {kunde_repr} | {status_repr} | {ort_repr} | {vat_repr}"
+
+    def determine_place_of_supply(
+        self, bewegte_lieferung, start_country: Country, end_country: Country
+    ):
         """
         Bestimmt den Ort dieser Lieferung basierend darauf, welche Lieferung
-        die bewegte ist.
+        die bewegte ist und wo der Transport beginnt/endet.
         """
         bewegte_lieferung: Lieferung
         if self.is_moved_supply:
             # Ort der bewegten Lieferung ist dort, wo die Beförderung beginnt.
-            self.place_of_supply = self.lieferant.country
+            self.place_of_supply = start_country
         else:
             # Prüfen, ob diese Lieferung VOR oder NACH der bewegten Lieferung liegt.
-            # Dazu gehen wir von dieser Lieferung rückwärts/vorwärts bis zum Start/Ende
-            # oder bis wir auf die bewegte Lieferung stoßen.
-
-            # Prüfung: Liegt diese Lieferung VOR der bewegten?
             current = self.kunde
             is_before = False
             while current is not None:
-                if current == bewegte_lieferung.lieferant:
+                # Wir prüfen, ob der *Kunde* dieser Lieferung der *Lieferant* der bewegten Lieferung ist
+                # oder ob der *Lieferant* dieser Lieferung der *Lieferant* der bewegten Lieferung ist.
+                # Das deckt den Fall ab, dass die bewegte Lieferung die erste ist.
+                if (
+                    current == bewegte_lieferung.lieferant
+                    or self.lieferant == bewegte_lieferung.lieferant
+                ):
                     is_before = True
                     break
+                # Sicherheitscheck, um Endlosschleifen bei fehlerhafter Kette zu vermeiden
+                if current == current.next_company:
+                    raise ValueError(
+                        f"Warnung: Endlosschleife in Kette bei {current} entdeckt."
+                    )
                 current = current.next_company
 
             if is_before:
                 # Ruhende Lieferungen VOR der bewegten gelten als dort ausgeführt,
-                # wo die Beförderung/Versendung beginnt (Ort des ersten Lieferanten).
-                self.place_of_supply = (
-                    bewegte_lieferung.lieferant.country
-                )  # Oder: self.lieferant.country
+                # wo die Beförderung/Versendung beginnt.
+                self.place_of_supply = start_country
             else:
                 # Ruhende Lieferungen NACH der bewegten gelten als dort ausgeführt,
-                # wo die Beförderung/Versendung endet (Ort des letzten Abnehmers).
-                # Finde den Endkunden der gesamten Transaktion
-                end_kunde_transaktion = self.lieferant.find_end_company()
-                self.place_of_supply = (
-                    end_kunde_transaktion.country
-                )  # Oder: self.kunde.country
+                # wo die Beförderung/Versendung endet.
+                self.place_of_supply = end_country
 
         return self.place_of_supply
+
+    def determine_vat_treatment(self, start_country: Country, end_country: Country):
+        """
+        Bestimmt die umsatzsteuerliche Behandlung dieser Lieferung.
+        Muss NACH determine_place_of_supply aufgerufen werden.
+        """
+        if self.place_of_supply is None:
+            self.vat_treatment = VatTreatmentType.UNKNOWN
+            self.invoice_note = "Ort der Lieferung konnte nicht bestimmt werden."
+            return
+
+        # Vereinfachung: Wir gehen davon aus, dass "Steuerbarkeit" primär von der EU-Mitgliedschaft abhängt.
+        # Eine Lieferung ist im Land des "place_of_supply" steuerbar, wenn dieses in der EU ist.
+        # Detailliertere Prüfungen (z.B. § 1 UStG) sind hier nicht implementiert.
+
+        is_place_in_eu = self.place_of_supply.EU
+        is_supplier_in_eu = self.lieferant.country.EU
+        is_customer_in_eu = self.kunde.country.EU
+        is_start_in_eu = start_country.EU
+        is_end_in_eu = end_country.EU
+
+        # 1. Ist die Lieferung überhaupt im Land des Lieferorts steuerbar?
+        if not is_place_in_eu:
+            self.vat_treatment = VatTreatmentType.NOT_TAXABLE
+            self.invoice_note = f"Nicht steuerbar (Ort: {self.place_of_supply.name})"
+            return
+
+        # 2. Prüfung auf Steuerbefreiungen (nur für die bewegte Lieferung relevant!)
+        if self.is_moved_supply:
+            # 2a. Innergemeinschaftliche Lieferung (§ 4 Nr. 1b, § 6a UStG)?
+            # Bedingung: Ort im Inland (EU), Kunde in anderem EU-Staat, Transport endet dort, Kunde verwendet USt-Id.
+            if (
+                is_place_in_eu
+                and is_customer_in_eu
+                and self.place_of_supply.code != self.kunde.country.code
+                and end_country.code == self.kunde.country.code
+            ):
+                # Annahme: Kunde verwendet gültige USt-Id des Ziellandes & Nachweise liegen vor.
+                self.vat_treatment = VatTreatmentType.EXEMPT_IC_SUPPLY
+                self.invoice_note = "Steuerfreie innergemeinschaftliche Lieferung"
+                # Ggf. Hinweis auf § 6a UStG oder entspr. EU-Artikel
+                return  # Befreit, keine weitere Prüfung nötig
+
+            # 2b. Ausfuhrlieferung (§ 4 Nr. 1a, § 6 UStG)?
+            # Bedingung: Ort im Inland (EU), Kunde im Drittland, Transport endet dort.
+            if is_place_in_eu and not is_customer_in_eu and not is_end_in_eu:
+                # Annahme: Ausfuhrnachweise liegen vor.
+                self.vat_treatment = VatTreatmentType.EXEMPT_EXPORT
+                self.invoice_note = "Steuerfreie Ausfuhrlieferung"
+                # Ggf. Hinweis auf § 6 UStG oder entspr. EU-Artikel
+                return  # Befreit, keine weitere Prüfung nötig
+
+        # 3. Wenn steuerbar und nicht befreit: Wer schuldet die Steuer? (Reverse Charge?)
+        # Prüfung auf Reverse Charge (§ 13b UStG / Art. 194 MwStSystRL)
+        # Vereinfachter Fall: Leistungsempfänger im Inland (Ort der Lief.), leistender Unternehmer im Ausland.
+        if (
+            is_place_in_eu
+            and self.place_of_supply.code
+            == self.kunde.country.code  # Kunde sitzt im Land des Lieferorts
+            and self.place_of_supply.code != self.lieferant.country.code
+        ):  # Lieferant sitzt NICHT im Land des Lieferorts
+            # Annahme: Kunde ist Unternehmer / jur. Person, die für Reverse Charge in Frage kommt.
+            self.vat_treatment = VatTreatmentType.TAXABLE_REVERSE_CHARGE
+            self.invoice_note = "Steuerschuldnerschaft des Leistungsempfängers"
+            # Ggf. Hinweis auf § 13b UStG oder Art. 194 MwStSystRL
+            return
+
+        # 4. Standardfall: Steuerbar, nicht befreit, kein Reverse Charge
+        self.vat_treatment = VatTreatmentType.TAXABLE_NORMAL
+        self.invoice_note = f"Umsatzsteuerpflichtig in {self.place_of_supply.name}"
+
+    # Hier müsste die Rechnung die USt des Landes von place_of_supply ausweisen.
 
 
 class Transaktion:
@@ -241,100 +381,98 @@ class Transaktion:
 
     def includes_only_eu_countries(self) -> bool:
         """Checks if all companies in the chain are located in the EU."""
+        # Diese Methode ist jetzt weniger kritisch, da die Länder pro Lieferung geprüft werden,
+        # aber kann für übergreifende Logik nützlich sein.
         return all(company.country.EU for company in self.get_ordered_chain_companies())
 
-    def calculate_delivery(self) -> list[Lieferung]:
+    def calculate_delivery_and_vat(self) -> list[Lieferung]:  # Umbenannt für Klarheit
         """
-        Determines the moved and stationary supplies within the chain transaction
-        based on who is responsible for the shipment.
+        Determines the moved/stationary supplies, their place of supply,
+        and their VAT treatment within the chain transaction.
 
         Returns:
-            List[Lieferung]: A list of Lieferung objects, where one is marked
-                             as the moved supply (`is_moved_supply = True`).
+            List[Lieferung]: A list of Lieferung objects with determined
+                             place_of_supply and vat_treatment.
         Raises:
-            ValueError: If no shipping company is designated in the chain.
+            ValueError: If no shipping company is designated or other errors occur.
         """
-        self.lieferungen = []  # Liste für diese Berechnung zurücksetzen
+        self.lieferungen = []
         bewegte_lieferung_gefunden = False
+        bewegte_lieferung_obj: [Lieferung] = None
 
         # 1. Transporteur finden
         shipping_company = self.find_shipping_company()
         if shipping_company is None:
-            # Hier könntest du auch eine Standardregel anwenden, aber eine Ausnahme ist sicherer
-            raise ValueError(
-                "Keine Firma für den Transport verantwortlich gemacht. Zuordnung der bewegten Lieferung nicht möglich."
-            )
+            raise ValueError("Keine Firma für den Transport verantwortlich gemacht.")
 
-        # 2. Alle Lieferungen erstellen (noch ohne Zuordnung bewegt/ruhend)
+        # 2. Kette und Start-/Endland bestimmen
         firmen = self.get_ordered_chain_companies()
+        if len(firmen) < 2:
+            raise ValueError("Transaktion benötigt mindestens 2 Firmen.")
+        start_country = firmen[
+            0
+        ].country  # Wo beginnt der Transport physisch? (Land des ersten Lieferanten)
+        end_country = firmen[
+            -1
+        ].country  # Wo endet der Transport physisch? (Land des letzten Abnehmers)
+
+        # 3. Alle Lieferungen erstellen
         for i in range(len(firmen) - 1):
             lieferant = firmen[i]
             kunde = firmen[i + 1]
             self.lieferungen.append(Lieferung(lieferant, kunde))
 
-        # 3. Bewegte Lieferung zuordnen (§ 3 Abs. 6a UStG)
-        bewegte_lieferung_obj: [Lieferung] = None
-
+        # 4. Bewegte Lieferung zuordnen (§ 3 Abs. 6a UStG)
+        # (Logik von vorher übernommen)
         if shipping_company == self.start_company:
-            # Fall 1: Erster Lieferer transportiert -> Lieferung L1 -> K1 ist bewegt
             if self.lieferungen:
                 self.lieferungen[0].is_moved_supply = True
                 bewegte_lieferung_obj = self.lieferungen[0]
                 bewegte_lieferung_gefunden = True
         elif shipping_company == self.end_company:
-            # Fall 2: Letzter Abnehmer transportiert -> Lieferung L(n-1) -> K(n) ist bewegt
             if self.lieferungen:
                 self.lieferungen[-1].is_moved_supply = True
                 bewegte_lieferung_obj = self.lieferungen[-1]
                 bewegte_lieferung_gefunden = True
-        else:
-            # Fall 3: Ein Zwischenhändler (ZH) transportiert
-            # Grundregel: Vermutung, dass ZH als Abnehmer handelt.
-            # -> Lieferung VOM ZH an SEINEN KUNDEN ist die bewegte Lieferung.
-            # Ausnahme (§ 3 Abs. 6a Satz 4 Halbsatz 2 UStG):
-            #   Wenn ZH nachweist, dass er als Lieferer handelt (z.B. USt-IdNr. des Abgangslandes verwendet),
-            #   dann ist die Lieferung AN IHN die bewegte Lieferung.
-
-            # Finde die Lieferung VOM Zwischenhändler (shipping_company)
+        else:  # Zwischenhändler transportiert
             lieferung_vom_zh = next(
                 (l for l in self.lieferungen if l.lieferant == shipping_company), None
             )
-
-            # Finde die Lieferung AN den Zwischenhändler (shipping_company)
             lieferung_an_zh = next(
                 (l for l in self.lieferungen if l.kunde == shipping_company), None
             )
 
-            # --- HIER Logik für die Ausnahme einfügen ---
-            # Beispielhafte Prüfung (muss an deine genauen Kriterien angepasst werden):
-            # Verwendet der ZH die USt-Id des Abgangslandes (also des Landes seines Lieferanten)?
             acts_as_supplier = False
+            # Verwendet der ZH die USt-Id des Abgangslandes (Land seines Lieferanten)?
+            # ODER: Hat er den Transport explizit im Auftrag seines Lieferanten durchgeführt? (Hier nicht prüfbar)
+            # Wir nutzen die 'changed_vat'-Logik als Indikator für die Ausnahme
             if (
                 shipping_company.changed_vat
                 and lieferung_an_zh
-                and shipping_company.new_country == lieferung_an_zh.lieferant.country
+                and shipping_company.new_country  # Sicherstellen, dass new_country gesetzt ist
+                and shipping_company.new_country.code
+                == lieferung_an_zh.lieferant.country.code
             ):
                 acts_as_supplier = True
-            # --- Ende Ausnahme-Logik ---
 
             if acts_as_supplier and lieferung_an_zh:
-                # Ausnahme trifft zu: Lieferung AN den ZH ist bewegt
                 lieferung_an_zh.is_moved_supply = True
                 bewegte_lieferung_obj = lieferung_an_zh
                 bewegte_lieferung_gefunden = True
             elif lieferung_vom_zh:
-                # Grundregel: Lieferung VOM ZH ist bewegt
                 lieferung_vom_zh.is_moved_supply = True
                 bewegte_lieferung_obj = lieferung_vom_zh
                 bewegte_lieferung_gefunden = True
 
-        if not bewegte_lieferung_gefunden:
-            # Sollte durch die Logik oben eigentlich nicht passieren, aber als Sicherheitsnetz
+        if not bewegte_lieferung_gefunden or bewegte_lieferung_obj is None:
             raise ValueError("Konnte die bewegte Lieferung nicht eindeutig zuordnen.")
 
-        # 4. Ort der Lieferung für alle Lieferungen bestimmen (optional hier, oder später)
-        if bewegte_lieferung_obj:
-            for lief in self.lieferungen:
-                lief.determine_place_of_supply(bewegte_lieferung_obj)
+        # 5. Ort der Lieferung UND Steuerbehandlung für alle Lieferungen bestimmen
+        for lief in self.lieferungen:
+            lief.determine_place_of_supply(
+                bewegte_lieferung_obj, start_country, end_country
+            )
+            # Nach Bestimmung des Ortes die Steuerbehandlung ermitteln
+            lief.determine_vat_treatment(start_country, end_country)
 
         return self.lieferungen

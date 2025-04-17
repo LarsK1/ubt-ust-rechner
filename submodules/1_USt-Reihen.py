@@ -1,8 +1,10 @@
-import streamlit as st
-from helpers.helpers import get_countries, Handelsstufe, Transaktion, Lieferung
-from helpers.fixed_header import st_fixed_container
-from graphviz import Digraph
 from random import randrange
+
+import streamlit as st
+from graphviz import Digraph
+
+from helpers.fixed_header import st_fixed_container
+from helpers.helpers import get_countries, Handelsstufe, Transaktion, Lieferung
 
 st.title("USt-Reihengeschäfte")
 
@@ -226,14 +228,7 @@ def Eingabe_1():
         with dot.subgraph() as s:
             s.attr("node", shape="box")
             for company in transaction.get_ordered_chain_companies():
-                if company.changed_vat:
-                    company_text = (
-                        str(company)
-                        .replace("-", "\n-------\n", 1)
-                        .replace("-------", f"abw. USt-ID: {company.new_country}")
-                    )
-                else:
-                    company_text = str(company).replace("-", "\n-------\n", 1)
+                company_text = f"{company.get_role_name(True)}\n{f"abw. USt-ID: {company.new_country}" if company.changed_vat else "-------"}\n{company.country.name} ({company.country.code})"
                 if not company.country.EU:
                     company_text += ", Drittland"
                 else:
@@ -286,33 +281,14 @@ def Eingabe_1():
                     color="grey",
                 )
         if transaction.find_shipping_company():
-            if transaction.shipping_company == transaction.start_company:
-                dot.edge(
-                    str(transaction.start_company.identifier),
-                    str(transaction.end_company.identifier),
-                    f"Transport durch {transaction.shipping_company}",
-                    style="bold",
-                    color="blue",
-                    splines="polyline",
-                )
-            elif transaction.shipping_company == transaction.end_company:
-                dot.edge(
-                    str(transaction.start_company.identifier),
-                    str(transaction.end_company.identifier),
-                    f"Transport durch {transaction.shipping_company}",
-                    style="bold",
-                    color="blue",
-                    splines="polyline",
-                )
-            else:
-                dot.edge(
-                    str(transaction.start_company.identifier),
-                    str(transaction.end_company.identifier),
-                    f"Transport durch {transaction.shipping_company}",
-                    style="bold",
-                    color="blue",
-                    splines="polyline",
-                )
+            dot.edge(
+                str(transaction.start_company.identifier),
+                str(transaction.end_company.identifier),
+                f"Transport durch {transaction.shipping_company.get_role_name(True)} - {transaction.shipping_company.country.name} ({transaction.shipping_company.country.code})",
+                style="bold",
+                color="blue",
+                splines="polyline",
+            )
 
         diagram.graphviz_chart(dot, use_container_width=True)
 
@@ -320,42 +296,84 @@ def Eingabe_1():
 def Analyse_1():
     if "transaction" in st.session_state:
         transaction: Transaktion = st.session_state["transaction"]
+
         st.header("Analyse des Reihengeschäfts")
-        with st.expander("Lieferungen", icon="🛩️"):
-            try:
-                alle_lieferungen = transaction.calculate_delivery()
+
+        try:
+            # Berechnung durchführen (nur einmal)
+            alle_lieferungen: list[Lieferung] = transaction.calculate_delivery_and_vat()
+
+            # --- Abschnitt Lieferungen ---
+            with st.expander("Übersicht der Lieferungen", icon="🚚", expanded=True):
+                # 1. Bewegte Lieferung anzeigen
                 st.markdown("#### Bewegte Lieferung")
-                # Finde die bewegte Lieferung zum Nachschauen
                 bewegte_lieferung = next(
                     (l for l in alle_lieferungen if l.is_moved_supply), None
                 )
                 if bewegte_lieferung:
+                    # Nutze die verbesserte __repr__ Methode der Lieferung
                     st.markdown(f"- {bewegte_lieferung}")
                 else:
-                    st.warning("eine bewegte Lieferung gefunden. ", icon="⚠️")
-                st.markdown("#### Ruhende Lieferungen:")
-                lief: Lieferung
-                for lief in alle_lieferungen:
-                    if lief.is_moved_supply:
-                        continue
-                    st.markdown(f"- {lief} (Ort: {lief.place_of_supply})")
+                    st.warning("Keine bewegte Lieferung gefunden.", icon="⚠️")
 
-            except ValueError as e:
-                st.error(f"Fehler bei der Berechnung: {e}", icon="❌")
-        with st.expander("Rechnungsstellung", icon="📝"):
-            for i, company in enumerate(transaction.get_ordered_chain_companies()):
-                st.subheader(
-                    f"Rechnung von {company.previous_company} an {company.next_company}"
-                )
-                st.write(
-                    f"Die Rechnung wird von {company.previous_company} an {company.next_company} gestellt."
-                )
+                # 2. Ruhende Lieferungen anzeigen
+                st.markdown("#### Ruhende Lieferungen")
+                ruhende_lieferungen = [
+                    l for l in alle_lieferungen if not l.is_moved_supply
+                ]
+                if ruhende_lieferungen:
+                    for lief in ruhende_lieferungen:
+                        # Nutze die verbesserte __repr__ Methode der Lieferung
+                        st.markdown(f"- {lief}")
+                else:
+                    st.info("Keine ruhenden Lieferungen vorhanden.")
+
+            # --- Abschnitt Rechnungsstellung ---
+            # Nur anzeigen, wenn die Berechnung erfolgreich war
+            if alle_lieferungen:
+                with st.expander(
+                    "Übersicht der Rechnungsstellung", icon="📝", expanded=True
+                ):
+                    st.markdown("#### Rechnungsdetails pro Lieferung")
+                    lief: Lieferung  # Type Hint für Klarheit
+                    for i, lief in enumerate(alle_lieferungen):
+                        st.markdown(f"**Rechnung {i+1}:**")
+                        col1, col2 = st.columns([1, 4])  # Verhältnis anpassbar
+                        with col1:
+                            st.markdown(f"**Lieferant:**")
+                            st.markdown(f"**Kunde:**")
+                            st.markdown(f"**Behandlung:**")
+                        with col2:
+                            # Verwende die __repr__ der Handelsstufe für Lieferant/Kunde
+                            st.markdown(f"{lief.lieferant}")
+                            st.markdown(f"{lief.kunde}")
+                            # Verwende die benutzerfreundliche Anzeige der Behandlung
+                            st.markdown(f"*{lief.get_vat_treatment_display()}*")
+                            if lief.invoice_note:
+                                st.caption(f"Hinweis: {lief.invoice_note}")
+                        st.divider()  # Trennlinie nach jeder Rechnung
+
+        except ValueError as e:
+            st.error(f"Fehler bei der Berechnung der Lieferungen: {e}", icon="❌")
+            # Setze alle_lieferungen auf None oder leere Liste, um Fehler im nächsten Abschnitt zu vermeiden
+            alle_lieferungen = []
+        except Exception as e:  # Fange auch andere mögliche Fehler ab
+            st.error(f"Ein unerwarteter Fehler ist aufgetreten: {e}", icon="🔥")
+            alle_lieferungen = []  # Sicherstellen, dass die Liste leer ist bei Fehlern
+
+        # --- Zurück-Button ---
         st.button(
             "Zurück zur Eingabe", icon="⬅️", on_click=helper_switch_page, args=(0, None)
         )
+
     else:
-        st.session_state["aktuelle_seite"] = 0
-        st.rerun()
+        # Fallback, falls die Transaktion nicht im Session State ist
+        st.warning(
+            "Keine Transaktionsdaten gefunden. Bitte gehen Sie zurück zur Eingabe."
+        )
+        if st.button("Zurück zur Eingabe", icon="⬅️"):
+            st.session_state["aktuelle_seite"] = 0
+            st.rerun()
 
 
 if "aktuelle_seite" not in st.session_state:
