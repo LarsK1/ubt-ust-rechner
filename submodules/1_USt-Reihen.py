@@ -298,7 +298,15 @@ def Analyse_1():
         transaction: Transaktion = st.session_state["transaction"]
 
         st.header("Analyse des Reihengeschäfts")
-
+        is_triangle = transaction.is_triangular_transaction()
+        if is_triangle:
+            st.success(
+                """**Dreiecksgeschäft erkannt!**
+				Die Voraussetzungen für die Vereinfachungsregelung nach § 25b UStG / Art. 141 MwStSystRL scheinen erfüllt zu sein.
+				Beachten Sie die besonderen Rechnungslegungs- und Meldepflichten.
+				""",
+                icon="🔺",
+            )
         try:
             # Berechnung durchführen (nur einmal)
             alle_lieferungen: list[Lieferung] = transaction.calculate_delivery_and_vat()

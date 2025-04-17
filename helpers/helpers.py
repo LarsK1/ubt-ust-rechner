@@ -385,6 +385,54 @@ class Transaktion:
         # aber kann für übergreifende Logik nützlich sein.
         return all(company.country.EU for company in self.get_ordered_chain_companies())
 
+    def is_triangular_transaction(self) -> bool:
+        """
+        Prüft, ob die Bedingungen für ein (vereinfachtes) Dreiecksgeschäft vorliegen.
+
+        Bedingungen (vereinfacht nach § 25b UStG / Art. 141 MwStSystRL):
+        1. Drei Unternehmer (A, B, C).
+        2. Alle in unterschiedlichen EU-Mitgliedstaaten registriert.
+        3. Lieferung geht direkt von A an C. (Wird durch Reihengeschäft impliziert)
+        4. B (mittlerer Unternehmer) verwendet für den Erwerb von A
+           keine USt-IdNr. des Abgangslandes (A's Land).
+        5. C (letzter Abnehmer) ist im Bestimmungsland für USt-Zwecke registriert. (Annahme hier)
+
+        Returns:
+                bool: True, wenn es sich wahrscheinlich um ein Dreiecksgeschäft handelt, sonst False.
+        """
+        firmen = self.get_ordered_chain_companies()
+
+        # 1. Genau drei Unternehmer?
+        if len(firmen) != 3:
+            return False
+
+        a = firmen[0]  # Erster Lieferer
+        b = firmen[1]  # Mittlerer Unternehmer (Erwerber)
+        c = firmen[2]  # Letzter Abnehmer
+
+        # 2. Alle in der EU?
+        if not (a.country.EU and b.country.EU and c.country.EU):
+            return False
+
+        # 3. Alle in unterschiedlichen EU-Mitgliedstaaten?
+        if (
+            a.country.code == b.country.code
+            or b.country.code == c.country.code
+            or a.country.code == c.country.code
+        ):
+            return False
+
+        # 4. Verwendet B (Mittlerer) eine USt-Id des Abgangslandes (A)?
+        #    Wenn B eine abweichende ID nutzt, darf es nicht die von A sein.
+        if b.changed_vat and b.new_country:
+            if b.new_country.code == a.country.code:
+                # B tritt mit USt-Id des Abgangslandes auf -> KEIN Dreiecksgeschäft (i.S.d. Vereinfachung)
+                return False
+        # Wenn B keine abweichende ID nutzt (Standardfall), ist die Bedingung erfüllt.
+
+        # Wenn alle Prüfungen bestanden wurden:
+        return True
+
     def calculate_delivery_and_vat(self) -> list[Lieferung]:  # Umbenannt für Klarheit
         """
         Determines the moved/stationary supplies, their place of supply,
