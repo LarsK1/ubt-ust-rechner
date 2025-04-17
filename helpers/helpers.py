@@ -38,15 +38,14 @@ class Handelsstufe:
 
     def __repr__(self):
         if self.identifier == 0:
-            return f"Verkäufer ({self.country})"  # Klammern für Klarheit
+            return f"Verkäufer - {self.country}"
         elif self.identifier == self.max_identifier - 1:
-            return f"Empfänger ({self.country})"  # Klammern für Klarheit
+            return f"Empfänger - {self.country}"
         else:
-            # Unterscheidung zwischen erstem und weiteren Zwischenhändlern für Klarheit
             if self.identifier == 1:
-                return f"1. Zwischenhändler ({self.country})"
+                return f"1. Zwischenhändler - {self.country}"
             else:
-                return f"{self.identifier}. Zwischenhändler ({self.country})"
+                return f"{self.identifier}. Zwischenhändler - {self.country}"
 
     def add_previous_company_to_chain(self, company, previous_company):
         """
@@ -142,11 +141,12 @@ class Lieferung:
         )
         return f"Lieferung von {self.lieferant} an {self.kunde} ({bewegt_status})"
 
-    def determine_place_of_supply(self, bewegte_lieferung: "Lieferung"):
+    def determine_place_of_supply(self, bewegte_lieferung):
         """
         Bestimmt den Ort dieser Lieferung basierend darauf, welche Lieferung
         die bewegte ist.
         """
+        bewegte_lieferung: Lieferung
         if self.is_moved_supply:
             # Ort der bewegten Lieferung ist dort, wo die Beförderung beginnt.
             self.place_of_supply = self.lieferant.country

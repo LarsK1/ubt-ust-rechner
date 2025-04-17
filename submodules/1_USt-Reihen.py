@@ -1,5 +1,5 @@
 import streamlit as st
-from helpers.helpers import get_countries, Handelsstufe, Transaktion
+from helpers.helpers import get_countries, Handelsstufe, Transaktion, Lieferung
 from helpers.fixed_header import st_fixed_container
 from graphviz import Digraph
 from random import randrange
@@ -16,7 +16,6 @@ def helper_switch_page(page, options):
         st.session_state["transaction"] = Transaktion(options[0], options[-1])
 
 
-@st.fragment()
 def Eingabe_1():
     laender_firmen: list[Handelsstufe] = []
 
@@ -177,7 +176,7 @@ def Eingabe_1():
 
                 customs_import = st.selectbox(
                     "Wer übernimmt die Zollabwicklung?",
-                    ["keine Auswahl"] + erhaltende_firma_laender_moeglich,
+                    ["keine Auswahl"] + laender_firmen,
                 )
                 if isinstance(customs_import, Handelsstufe):
                     for firma in laender_firmen:
@@ -318,42 +317,31 @@ def Eingabe_1():
         diagram.graphviz_chart(dot, use_container_width=True)
 
 
-@st.fragment()
 def Analyse_1():
     if "transaction" in st.session_state:
         transaction: Transaktion = st.session_state["transaction"]
         st.header("Analyse des Reihengeschäfts")
-        try:
-            alle_lieferungen = transaction.calculate_delivery()
-            print("Lieferungen in der Transaktion:")
-            for lief in alle_lieferungen:
-                print(f"- {lief} (Ort: {lief.place_of_supply})")
-
-            # Finde die bewegte Lieferung zum Nachschauen
-            bewegte_lieferung = next(
-                (l for l in alle_lieferungen if l.is_moved_supply), None
-            )
-            if bewegte_lieferung:
-                print(f"\nDie bewegte Lieferung ist: {bewegte_lieferung}")
-            else:
-                print(
-                    "\nFehler: Keine bewegte Lieferung gefunden (sollte nicht passieren)."
-                )
-
-        except ValueError as e:
-            print(f"Fehler bei der Berechnung: {e}")
         with st.expander("Lieferungen", icon="🛩️"):
-            for i, company in enumerate(transaction.get_ordered_chain_companies()):
-                st.subheader(
-                    f"Lieferung von {company.previous_company} nach {company.next_company}"
+            try:
+                alle_lieferungen = transaction.calculate_delivery()
+                st.markdown("#### Bewegte Lieferung")
+                # Finde die bewegte Lieferung zum Nachschauen
+                bewegte_lieferung = next(
+                    (l for l in alle_lieferungen if l.is_moved_supply), None
                 )
-                st.write(
-                    f"Die Lieferung erfolgt von {company.previous_company} nach {company.next_company}."
-                )
-                if company.responsible_for_customs:
-                    st.write(
-                        f"Die Zollabwicklung erfolgt durch {company.responsible_for_customs}."
-                    )
+                if bewegte_lieferung:
+                    st.markdown(f"- {bewegte_lieferung}")
+                else:
+                    st.warning("eine bewegte Lieferung gefunden. ", icon="⚠️")
+                st.markdown("#### Ruhende Lieferungen:")
+                lief: Lieferung
+                for lief in alle_lieferungen:
+                    if lief.is_moved_supply:
+                        continue
+                    st.markdown(f"- {lief} (Ort: {lief.place_of_supply})")
+
+            except ValueError as e:
+                st.error(f"Fehler bei der Berechnung: {e}", icon="❌")
         with st.expander("Rechnungsstellung", icon="📝"):
             for i, company in enumerate(transaction.get_ordered_chain_companies()):
                 st.subheader(
@@ -362,6 +350,9 @@ def Analyse_1():
                 st.write(
                     f"Die Rechnung wird von {company.previous_company} an {company.next_company} gestellt."
                 )
+        st.button(
+            "Zurück zur Eingabe", icon="⬅️", on_click=helper_switch_page, args=(0, None)
+        )
     else:
         st.session_state["aktuelle_seite"] = 0
         st.rerun()
@@ -374,3 +365,6 @@ if st.session_state["aktuelle_seite"] == 0:
     Eingabe_1()
 elif st.session_state["aktuelle_seite"] == 1:
     Analyse_1()
+else:
+    st.session_state["aktuelle_seite"] = 0
+    st.rerun()
