@@ -15,7 +15,7 @@ schritt = 0
 diagram = st_fixed_container(mode="sticky", position="top", border=True, margin="0px")
 
 with st.expander("Grundlegende Daten"):
-    st.subheader("Schritt 1: Beteiligte Firmen und Länderauswahl")
+    st.subheader("Schritt 1: Anzahl der beteiligten Firmen")
     # Anzahl der beteiligten Firmen festlegen
     anzahl_firmen = st.number_input(
         "Anzahl der beteiligten Firmen:", min_value=1, step=1, value=3
@@ -35,7 +35,7 @@ with st.expander("Grundlegende Daten"):
         st.divider()
         # Länderauswahl für jede Firma
         if anzahl_firmen:
-            st.subheader("Schritt 2: Wähle das Land für jede Firma")
+            st.subheader("Schritt 2: Firmensitz")
             for i in range(int(anzahl_firmen)):
                 if i == 0:
                     land = st.selectbox(
@@ -142,6 +142,10 @@ if schritt == 1:
             for firma in laender_firmen:
                 if firma.identifier == transport_firma.identifier:
                     firma.responsible_for_shippment = True
+                    st.warning(
+                        "Die transportierende Firma wird im Chart orange dargestellt.",
+                        icon="✅",
+                    )
                     break
         if transport_firma != "keine Auswahl":
             erhaltende_firma_laender_moeglich = [
@@ -151,6 +155,8 @@ if schritt == 1:
             erhaltende_firma_laender_moeglich = laender_firmen
         if not all(laender_firmen[i].country.EU for i in range(len(laender_firmen))):
             st.divider()
+            st.subheader("Schritt 5: Zollabwicklung")
+
             customs_import = st.selectbox(
                 "Wer übernimmt die Zollabwicklung?", ["keine Auswahl"] + laender_firmen
             )
@@ -158,6 +164,10 @@ if schritt == 1:
                 for firma in laender_firmen:
                     if firma.identifier == customs_import.identifier:
                         firma.responsible_for_customs = True
+                        st.success(
+                            "Die Zoll abwickelnde Firma wird im Chart grün dargestellt.",
+                            icon="✅",
+                        )
                         break
 
 if len(laender_firmen) > 2:
@@ -174,7 +184,7 @@ if len(laender_firmen) > 2:
                 company_text = (
                     str(company)
                     .replace("-", "\n-------\n", 1)
-                    .replace("-------", f"ab. USt-ID: {company.new_country}")
+                    .replace("-------", f"abw. USt-ID: {company.new_country}")
                 )
             else:
                 company_text = str(company).replace("-", "\n-------\n", 1)
@@ -182,7 +192,14 @@ if len(laender_firmen) > 2:
                 company_text += ", Drittland"
             else:
                 company_text += ", EU"
-            if company.responsible_for_shippment:
+            if company.responsible_for_shippment and company.responsible_for_customs:
+                s.attr("node", shape="box", fillcolor="#ffa500:#b2d800", style="filled")
+                s.node(
+                    str(company.identifier),
+                    company_text,
+                )
+                s.attr("node", shape="box", style="", color="")
+            elif company.responsible_for_shippment:
                 s.attr("node", shape="box", fillcolor="#ffa500", style="filled")
                 s.node(
                     str(company.identifier),
