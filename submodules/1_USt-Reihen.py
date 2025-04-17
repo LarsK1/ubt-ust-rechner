@@ -348,7 +348,7 @@ def Analyse_1():
                     # constraint='false' # Kann helfen, Layout zu entzerren, wenn Kanten sich kreuzen
                 )
 
-                # --- Kante für Ruhende Lieferung (wie bisher) ---
+                # --- Kante für Ruhende Lieferung ---
                 if not lief.is_moved_supply:
                     ruhend_label = f"Ruhende Lieferung\nOrt: {lief.place_of_supply.code if lief.place_of_supply else '?'}"
                     dot_analyse.edge(
