@@ -311,7 +311,90 @@ def Analyse_1():
         try:
             # Berechnung durchführen (nur einmal)
             alle_lieferungen: list[Lieferung] = transaction.calculate_delivery_and_vat()
+            st.subheader("Visualisierung: Lieferungen & Rechnungen")
+            dot_analyse = Digraph(
+                comment="Analyse Reihengeschäft", graph_attr={"rankdir": "LR"}
+            )
 
+            # 1. Knoten (Firmen) erstellen
+            with dot_analyse.subgraph() as s:
+                s.attr("node", shape="box")
+                firmen_im_graph = transaction.get_ordered_chain_companies()
+                for company in firmen_im_graph:
+                    # Basis-Label wie in der Eingabe
+                    company_text = f"{company.get_role_name(True)}\n{company.country.name} ({company.country.code})"
+                    if company.changed_vat and company.new_country:
+                        company_text += f"\nabw. USt-ID: {company.new_country.code}"
+                    s.node(str(company.identifier), company_text)
+
+            # 2. Kanten (Rechnungen UND ruhende Lieferungen) erstellen
+            bewegte_lieferung_gefunden: Lieferung | None = None
+            for lief in alle_lieferungen:
+                # --- Rechnungskante
+                rechnungs_label = f"Rechnung:\n{lief.get_vat_treatment_display()}"
+                if (
+                    lief.invoice_note
+                    and "Steuerfrei" not in lief.invoice_note
+                    and "Reverse Charge" not in lief.invoice_note
+                ):
+                    rechnungs_label += f"\n({lief.invoice_note})"
+
+                dot_analyse.edge(
+                    str(lief.lieferant.identifier),
+                    str(lief.kunde.identifier),
+                    label=rechnungs_label,
+                    color="orange",  # Farbe für Rechnungen
+                    fontsize="10",
+                    # constraint='false' # Kann helfen, Layout zu entzerren, wenn Kanten sich kreuzen
+                )
+
+                # --- Kante für Ruhende Lieferung (wie bisher) ---
+                if not lief.is_moved_supply:
+                    ruhend_label = f"Ruhende Lieferung\nOrt: {lief.place_of_supply.code if lief.place_of_supply else '?'}"
+                    dot_analyse.edge(
+                        str(lief.lieferant.identifier),
+                        str(lief.kunde.identifier),
+                        label=ruhend_label,
+                        color="grey",  # Andere Farbe für ruhende Lieferung
+                        style="dashed",  # Gestrichelt zur Unterscheidung
+                        fontsize="9",  # Etwas kleiner
+                        # constraint='false' # Kann helfen, Layout zu entzerren
+                    )
+                else:
+                    # Merke dir die bewegte Lieferung für die separaten Kanten
+                    bewegte_lieferung_gefunden = lief
+
+            # 3. Kante für die RECHTLICH bewegte Lieferung (BLAU)
+            if bewegte_lieferung_gefunden:
+                bewegte_label = f"Bewegte Lieferung\nOrt: {bewegte_lieferung_gefunden.place_of_supply.code if bewegte_lieferung_gefunden.place_of_supply else '?'}"
+                dot_analyse.edge(
+                    # Von Lieferant zu Kunde DIESER Lieferung
+                    str(bewegte_lieferung_gefunden.lieferant.identifier),
+                    str(bewegte_lieferung_gefunden.kunde.identifier),
+                    label=bewegte_label,
+                    color="blue",  # Farbe für rechtlich bewegte Lieferung
+                    style="bold",
+                    fontsize="10",
+                    # constraint='false' # Kann helfen, Layout zu entzerren
+                )
+
+            # 4. Kante für den PHYSISCHEN Transportweg (GRÜN)
+            if transaction.shipping_company:  # Nur wenn ein Transporteur bekannt ist
+                transport_label = f"Physischer Transport\ndurch: {transaction.shipping_company.get_role_name(True)}"
+                dot_analyse.edge(
+                    # Von erster zu letzter Firma
+                    str(transaction.start_company.identifier),
+                    str(transaction.end_company.identifier),
+                    label=transport_label,
+                    color="green",  # Farbe für physischen Transport
+                    style="bold, dotted",  # Fett und gepunktet zur Unterscheidung
+                    fontsize="10",
+                    splines="curved",  # Oder polyline, um Knoten zu umgehen
+                    # constraint='false' # Kann helfen, Layout zu entzerren
+                )
+
+            # Graph anzeigen
+            st.graphviz_chart(dot_analyse, use_container_width=True)
             # --- Abschnitt Lieferungen ---
             with st.expander("Übersicht der Lieferungen", icon="🚚", expanded=True):
                 # 1. Bewegte Lieferung anzeigen
