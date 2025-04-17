@@ -433,6 +433,78 @@ class Transaktion:
         # Wenn alle Prüfungen bestanden wurden:
         return True
 
+    def determine_registration_obligations(
+        self,
+    ) -> dict[Handelsstufe, set[Country]]:
+        """
+        Ermittelt die wahrscheinlichen EU-Umsatzsteuer-Registrierungspflichten
+        für jede beteiligte Firma basierend auf den Lieferungen.
+
+        Returns:
+            dict[Handelsstufe, set[Country]]: Ein Dictionary, das jeder Firma
+                                              ein Set von Ländern zuordnet,
+                                              in denen eine Registrierung
+                                              wahrscheinlich notwendig ist.
+        """
+        # Initialisiere ein Dictionary für jede Firma mit einem leeren Set für Länder
+        registration_needs = {
+            firma: set() for firma in self.get_ordered_chain_companies()
+        }
+
+        # Stelle sicher, dass Lieferungen berechnet wurden
+        if not self.lieferungen:
+            try:
+                self.calculate_delivery_and_vat()
+            except ValueError:
+                # Wenn Berechnung fehlschlägt, können keine Pflichten ermittelt werden
+                return registration_needs
+        if not self.lieferungen:
+            return registration_needs  # Immer noch leer, gib leeres Dict zurück
+
+        # Grundannahme: Jede EU-Firma ist in ihrem Heimatland registriert
+        for firma in registration_needs.keys():
+            if firma.country.EU:
+                registration_needs[firma].add(firma.country)
+
+        # Gehe jede Lieferung durch und prüfe auf Registrierungspflichten
+        lief: Lieferung
+        for lief in self.lieferungen:
+            lieferant = lief.lieferant
+            kunde = lief.kunde
+            place = lief.place_of_supply
+            treatment = lief.vat_treatment
+
+            # TODO: Überspringe, wenn kein Lieferort bestimmt oder außerhalb EU (Fokus auf EU)
+            if not place or not place.EU:
+                continue
+
+            # 1. Pflichten des Lieferanten (lieferant)
+            if treatment == VatTreatmentType.TAXABLE_NORMAL:
+                # Lieferant muss Steuer im Lieferort-Land abführen -> Registrierung nötig
+                registration_needs[lieferant].add(place)
+            elif treatment == VatTreatmentType.EXEMPT_IC_SUPPLY:
+                # Lieferant muss IG-Lieferung melden -> Registrierung im Abgangsland (place) nötig
+                registration_needs[lieferant].add(place)
+            elif treatment == VatTreatmentType.EXEMPT_EXPORT:
+                # Lieferant muss Ausfuhr nachweisen -> Registrierung im Abgangsland (place) nötig
+                registration_needs[lieferant].add(place)
+            # Bei TAXABLE_REVERSE_CHARGE hat der Lieferant i.d.R. keine *zusätzliche* Registrierungspflicht *nur* wegen dieser Lieferung im Zielland
+
+            # 2. Pflichten des Kunden (kunde)
+            if treatment == VatTreatmentType.EXEMPT_IC_SUPPLY:
+                # Kunde tätigt innergemeinschaftlichen Erwerb im Bestimmungsland (seinem Land)
+                # -> Registrierung im eigenen Land nötig (ist meist eh der Fall, aber zur Sicherheit)
+                if kunde.country.EU:
+                    registration_needs[kunde].add(kunde.country)
+            elif treatment == VatTreatmentType.TAXABLE_REVERSE_CHARGE:
+                # Kunde schuldet die Steuer im Empfangsland (place) -> Registrierung dort nötig
+                if kunde.country.EU:
+                    registration_needs[kunde].add(
+                        place
+                    )  # place ist hier das Land des Kunden
+
+        return registration_needs
+
     def calculate_delivery_and_vat(self) -> list[Lieferung]:  # Umbenannt für Klarheit
         """
         Determines the moved/stationary supplies, their place of supply,

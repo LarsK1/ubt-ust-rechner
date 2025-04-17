@@ -3,6 +3,7 @@ from random import randrange
 import streamlit as st
 from graphviz import Digraph
 
+from helpers.countries import Country
 from helpers.fixed_header import st_fixed_container
 from helpers.helpers import get_countries, Handelsstufe, Transaktion, Lieferung
 
@@ -359,7 +360,62 @@ def Analyse_1():
                             st.markdown(f"*{lief.get_vat_treatment_display()}*")
                             if lief.invoice_note:
                                 st.caption(f"Hinweis: {lief.invoice_note}")
-                        st.divider()  # Trennlinie nach jeder Rechnung
+                        if i < len(alle_lieferungen) - 1:
+                            st.divider()  # Trennlinie nach jeder Rechnung
+            if alle_lieferungen:  # Nur anzeigen, wenn Berechnung erfolgreich war
+                registration_data = transaction.determine_registration_obligations()
+                with st.expander(
+                    "Mögliche Registrierungspflichten (EU)", icon="🇪🇺", expanded=False
+                ):
+                    st.markdown("#### Notwendige USt-Registrierungen pro Firma")
+                    st.caption(
+                        "Dies ist eine automatisierte Einschätzung basierend auf den Lieferungen. Die tatsächliche Notwendigkeit kann von weiteren Faktoren abhängen."
+                    )
+
+                    firma: Handelsstufe
+                    registrierungen: set[Country]
+                    for firma, registrierungen in registration_data.items():
+                        # Überspringe Firmen ohne EU-Registrierungsbedarf oder Drittlandsfirmen ohne Bedarf
+                        if not firma.country.EU and not registrierungen:
+                            continue
+
+                        st.markdown(
+                            f"**{firma.get_role_name(True)}:**"
+                        )  # Nutzt die __repr__ der Handelsstufe
+
+                        # Heimatland immer anzeigen, wenn EU-Firma
+                        home_country_registered = False
+                        if firma.country.EU:
+                            st.markdown(
+                                f"- {firma.country.name} ({firma.country.code}) - *Heimatland (Annahme)*"
+                            )
+                            home_country_registered = True
+
+                        # Zusätzliche Registrierungen auflisten
+                        additional_registrations = registrierungen - {
+                            firma.country
+                        }  # Entferne Heimatland aus Set
+                        if additional_registrations:
+                            for country in sorted(
+                                additional_registrations, key=lambda c: c.name
+                            ):
+                                st.markdown(
+                                    f"- :red[{country.name} ({country.code}) - *Zusätzlich erforderlich*]"
+                                )
+                        elif (
+                            not home_country_registered and not additional_registrations
+                        ):
+                            # Falls es eine Drittlandsfirma ohne Registrierungsbedarf ist
+                            st.markdown(
+                                "- *Keine EU-Registrierungspflicht aus dieser Transaktion ersichtlich.*"
+                            )
+                        elif home_country_registered and not additional_registrations:
+                            # Falls nur Heimatland-Registrierung nötig ist
+                            st.markdown(
+                                "- *Keine zusätzlichen EU-Registrierungen erforderlich.*"
+                            )
+                        if firma != transaction.end_company:
+                            st.divider()
 
         except ValueError as e:
             st.error(f"Fehler bei der Berechnung der Lieferungen: {e}", icon="❌")
