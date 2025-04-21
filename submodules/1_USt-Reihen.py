@@ -451,61 +451,71 @@ def Analyse_1():
                                 st.caption(f"Hinweis: {lief.invoice_note}")
                         if i < len(alle_lieferungen) - 1:
                             st.divider()  # Trennlinie nach jeder Rechnung
-            if alle_lieferungen:  # Nur anzeigen, wenn Berechnung erfolgreich war
-                registration_data = transaction.determine_registration_obligations()
-                with st.expander(
-                    "Mögliche Registrierungspflichten (EU)", icon="🇪🇺", expanded=False
-                ):
-                    st.markdown("#### Notwendige USt-Registrierungen pro Firma")
-                    st.caption(
-                        "Dies ist eine automatisierte Einschätzung basierend auf den Lieferungen. Die tatsächliche Notwendigkeit kann von weiteren Faktoren abhängen."
-                    )
+            if alle_lieferungen:
+                try:# Nur anzeigen, wenn Berechnung erfolgreich war
+                    registration_data = transaction.determine_registration_obligations()
+                    with st.expander(
+                            "Mögliche Registrierungspflichten (EU)", icon="🇪🇺", expanded=False
+                    ):
+                        st.markdown("#### Notwendige USt-Registrierungen pro Firma")
+                        st.caption(
+                            "Dies ist eine automatisierte Einschätzung basierend auf den Lieferungen. Die tatsächliche Notwendigkeit kann von weiteren Faktoren abhängen."
+                        )
 
-                    firma: Handelsstufe
-                    registrierungen: set[Country]
-                    for firma, registrierungen in registration_data.items():
-                        # Überspringe Firmen ohne EU-Registrierungsbedarf oder Drittlandsfirmen ohne Bedarf
-                        if not firma.country.EU and not registrierungen:
-                            continue
+                        firma: Handelsstufe
+                        registrierungen: set[Country]  # Das ist ein Set von Country Objekten
 
-                        st.markdown(
-                            f"**{firma.get_role_name(True)}:**"
-                        )  # Nutzt die __repr__ der Handelsstufe
+                        # Iteriere durch die Firmen in der Reihenfolge der Kette für bessere Lesbarkeit
+                        firmen_in_order = transaction.get_ordered_chain_companies()
+                        data_items = [(f, registration_data.get(f, set())) for f in
+                                      firmen_in_order]  # Stelle sicher, dass alle Firmen berücksichtigt werden
 
-                        # Heimatland immer anzeigen, wenn EU-Firma
-                        home_country_registered = False
-                        if firma.country.EU:
+                        for firma, registrierungen_set in data_items:
+                            # Überspringe Firmen ohne EU-Registrierungsbedarf oder Drittlandsfirmen ohne Bedarf
+                            # Diese Bedingung könnte zu streng sein, wenn eine Drittlandsfirma Registrierungen hat
+                            # Besser: Prüfen, ob überhaupt Registrierungen vorhanden sind
+                            # if not firma.country.EU and not registrierungen_set:
+                            #    continue
+
                             st.markdown(
-                                f"- {firma.country.name} ({firma.country.code}) - *Heimatland (Annahme)*"
+                                f"**{firma}**"  # Nutzt die __repr__ der Handelsstufe
                             )
-                            home_country_registered = True
 
-                        # Zusätzliche Registrierungen auflisten
-                        additional_registrations = registrierungen - {
-                            firma.country
-                        }  # Entferne Heimatland aus Set
-                        if additional_registrations:
-                            for country in sorted(
-                                additional_registrations, key=lambda c: c.name
-                            ):
+                            if not registrierungen_set:
+                                # Keine Registrierungen für diese Firma gefunden
                                 st.markdown(
-                                    f"- :red[{country.name} ({country.code}) - *Zusätzlich erforderlich*]"
+                                    "- *Keine EU-Registrierungspflicht aus dieser Transaktion ersichtlich.*"
                                 )
-                        elif (
-                            not home_country_registered and not additional_registrations
-                        ):
-                            # Falls es eine Drittlandsfirma ohne Registrierungsbedarf ist
-                            st.markdown(
-                                "- *Keine EU-Registrierungspflicht aus dieser Transaktion ersichtlich.*"
-                            )
-                        elif home_country_registered and not additional_registrations:
-                            # Falls nur Heimatland-Registrierung nötig ist
-                            st.markdown(
-                                "- *Keine zusätzlichen EU-Registrierungen erforderlich.*"
-                            )
-                        if firma != transaction.end_company:
-                            st.divider()
+                            else:
+                                # Sortiere die Länder für eine konsistente Ausgabe
+                                # Wichtig: Konvertiere das Set in eine Liste zum Sortieren!
+                                sorted_registrations = sorted(list(registrierungen_set), key=lambda c: c.name)
 
+                                found_registration = False
+                                for country in sorted_registrations:
+                                    found_registration = True
+                                    if country == firma.country:
+                                        # Heimatland ist erforderlich
+                                        st.markdown(f"- {country.name} ({country.code}) - *Heimatland*")
+                                    else:
+                                        # Zusätzliche Registrierung erforderlich
+                                        st.markdown(f"- :red[{country.name} ({country.code}) - *Zusätzlich erforderlich*]")
+
+                                # Fallback, falls das Set leer war (sollte durch obige Prüfung abgedeckt sein)
+                                if not found_registration:
+                                    st.markdown(
+                                        "- *Keine EU-Registrierungspflicht aus dieser Transaktion ersichtlich.*"
+                                    )
+
+                            # Trennlinie nach jeder Firma, außer der letzten
+                            # Finde den Index der aktuellen Firma in der geordneten Liste
+                            current_index = firmen_in_order.index(firma)
+                            if current_index < len(firmen_in_order) - 1:
+                                st.divider()
+                except KeyError as e:
+                     st.error(f"Fehler beim Zugriff auf Registrierungsdaten für Firma: {e}. Möglicherweise fehlt eine Firma im Ergebnis von determine_registration_obligations.", icon="❌")
+                except Exception as e:
+                     st.error(f"Fehler bei der Ermittlung der Registrierungspflichten: {e}", icon="🔥")
         except ValueError as e:
             st.error(f"Fehler bei der Berechnung der Lieferungen: {e}", icon="❌")
             # Setze alle_lieferungen auf None oder leere Liste, um Fehler im nächsten Abschnitt zu vermeiden
