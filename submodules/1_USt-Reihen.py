@@ -5,7 +5,7 @@ from graphviz import Digraph
 
 from helpers.countries import Country
 from helpers.fixed_header import st_fixed_container
-from helpers.helpers import get_countries, Handelsstufe, Transaktion, Lieferung
+from helpers.helpers import get_countries, Handelsstufe, Transaktion, Lieferung, IntermediaryStatus
 
 st.title("USt-Reihengeschäfte")
 
@@ -148,6 +148,7 @@ def Eingabe_1():
             schritt = 0
             st.error("Ein Handelsgeschäft benötigt mind. zwei beteiligte Firmen.")
     if schritt == 1:
+        endanalyse_benötigte_daten = False
         with st.expander("Lieferung / Zollabwicklung"):
             st.subheader("Schritt 4: Lieferung")
             transport_firma: Handelsstufe | str = st.selectbox(
@@ -158,22 +159,37 @@ def Eingabe_1():
                 for firma in laender_firmen:
                     if firma.identifier == transport_firma.identifier:
                         firma.responsible_for_shippment = True
+                        endanalyse_benötigte_daten = True
                         st.warning(
                             "Die transportierende Firma wird im Chart orange dargestellt.",
                             icon="✅",
                         )
                         break
-            if transport_firma != "keine Auswahl":
-                erhaltende_firma_laender_moeglich = [
-                    l
-                    for l in laender_firmen
-                    if l.identifier != transport_firma.identifier
-                ]
-            else:
-                erhaltende_firma_laender_moeglich = laender_firmen
-            if not all(
+            if transport_firma != "keine Auswahl" and "Z" in transport_firma.get_role_name():
+                st.info(
+                    f"Da der {transport_firma.get_role_name(True)} den Transport beauftragt, ist sein Status relevant.",
+                    icon="ℹ️")
+                intermediar = st.selectbox("Status", ["keine Auswahl", "Auftretender Lieferer", "Erwerber"])
+                if intermediar != "keine Auswahl":
+                    for firma in laender_firmen:
+                        if firma.identifier == transport_firma.identifier:
+                            match intermediar:
+                                case "Auftretender Lieferer":
+                                    firma.intermediary_status = IntermediaryStatus.OCCURING_SUPPLIER
+                                    endanalyse_benötigte_daten = True
+                                case "Erwerber":
+                                    firma.intermediary_status = IntermediaryStatus.BUYER
+                                    endanalyse_benötigte_daten = True
+                                case _:
+                                    raise ValueError("Unbekannter Intermediary Status")
+                            break
+                else:
+                    endanalyse_benötigte_daten = False
+
+            customs_necessary = all(
                 laender_firmen[i].country.EU for i in range(len(laender_firmen))
-            ):
+            )
+            if not customs_necessary:
                 st.divider()
                 st.subheader("Schritt 5: Zollabwicklung")
 
@@ -185,39 +201,27 @@ def Eingabe_1():
                     for firma in laender_firmen:
                         if firma.identifier == customs_import.identifier:
                             firma.responsible_for_customs = True
+                            endanalyse_benötigte_daten = True
                             st.success(
                                 "Die Zoll abwickelnde Firma wird im Chart grün dargestellt.",
                                 icon="✅",
                             )
                             break
-            if transport_firma != "keine Auswahl":
-                if not all(
-                    laender_firmen[i].country.EU for i in range(len(laender_firmen))
-                ):
-                    if customs_import != "keine Auswahl":
-                        st.divider()
-                        st.subheader("Schritt 6: Analyse")
-                        st.text(
-                            "Vielen Dank. Nun sind alle Daten erfasst um den Sachverhalt korrekt berechnen zu können."
-                        )
-                        st.button(
-                            "Analyse starten.",
-                            icon="🛫",
-                            on_click=helper_switch_page,
-                            args=(1, laender_firmen),
-                        )
                 else:
-                    st.divider()
-                    st.subheader("Schritt 6: Analyse")
-                    st.text(
-                        "Vielen Dank. Nun sind alle Daten erfasst um den Sachverhalt korrekt berechnen zu können."
-                    )
-                    st.button(
-                        "Analyse starten.",
-                        icon="🛫",
-                        on_click=helper_switch_page,
-                        args=(1, laender_firmen),
-                    )
+                    endanalyse_benötigte_daten = False
+
+            if endanalyse_benötigte_daten:
+                st.divider()
+                st.subheader("Schritt 6: Analyse")
+                st.text(
+                    "Vielen Dank. Nun sind alle Daten erfasst um den Sachverhalt korrekt berechnen zu können."
+                )
+                st.button(
+                    "Analyse starten.",
+                    icon="🛫",
+                    on_click=helper_switch_page,
+                    args=(1, laender_firmen),
+                )
 
     if len(laender_firmen) > 2:
         diagram.subheader("Geschäftsablauf")
@@ -229,41 +233,43 @@ def Eingabe_1():
         with dot.subgraph() as s:
             s.attr("node", shape="box")
             for company in transaction.get_ordered_chain_companies():
-                company_text = f"{company.get_role_name(True)}\n{f"abw. USt-ID: {company.new_country}" if company.changed_vat else "-------"}\n{company.country.name} ({company.country.code})"
-                if not company.country.EU:
-                    company_text += ", Drittland"
+                company_text = f"{company.get_role_name(True)}"
+                # Zusatzinfos: Abw. USt-ID und Status
+                zusatz_infos = []
+                if company.changed_vat and company.new_country:
+                    zusatz_infos.append(f"abw. USt-ID: {company.new_country.code}\n")
+                if company.intermediary_status is not None:
+                     zusatz_infos.append(f"Status: {company.get_intermideary_status()}\n")
+
+                if zusatz_infos:
+                    company_text += "\n" + "".join(zusatz_infos)
                 else:
+                      company_text += "\n--------\n " # Minimaler Platzhalter für Höhe
+                company_text += f"{company.country.name}({company.country.code})"
+                if company.country.EU:
                     company_text += ", EU"
-                if (
-                    company.responsible_for_shippment
-                    and company.responsible_for_customs
-                ):
-                    s.attr(
-                        "node", shape="box", fillcolor="#ffa500:#b2d800", style="filled"
-                    )
-                    s.node(
-                        str(company.identifier),
-                        company_text,
-                    )
-                    s.attr("node", shape="box", style="", color="")
-                elif company.responsible_for_shippment:
-                    s.attr("node", shape="box", fillcolor="#ffa500", style="filled")
-                    s.node(
-                        str(company.identifier),
-                        company_text,
-                    )
-                    s.attr("node", shape="box", style="", color="")
-                elif company.responsible_for_customs:
-                    s.attr("node", shape="box", fillcolor="#b2d800", style="filled")
-                    s.node(
-                        str(company.identifier),
-                        company_text,
-                    )
-                    s.attr("node", shape="box", style="", color="")
                 else:
+                    company_text += ", Drittland"
+                # Farbliche Markierung (Transporteur/Zoll)
+                fillcolor = ""
+                if company.responsible_for_shippment and company.responsible_for_customs:
+                    fillcolor = "#ffa500:#b2d800" # Orange/Grün Gradient
+                elif company.responsible_for_shippment:
+                    fillcolor = "#ffa500" # Orange
+                elif company.responsible_for_customs:
+                    fillcolor = "#b2d800" # Grün
+
+                if fillcolor:
                     s.node(
                         str(company.identifier),
                         company_text,
+                        style="filled",
+                        fillcolor=fillcolor
+                    )
+                else:
+                     s.node(
+                        str(company.identifier),
+                        company_text
                     )
 
         for company in laender_firmen:

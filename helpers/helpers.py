@@ -31,6 +31,9 @@ class VatTreatmentType(Enum):
     NOT_TAXABLE = auto()  # Nicht steuerbar (im betrachteten Land)
     UNKNOWN = auto()
 
+class IntermediaryStatus(Enum):
+    BUYER = auto()
+    OCCURING_SUPPLIER = auto()
 
 class Handelsstufe:
     """
@@ -43,6 +46,7 @@ class Handelsstufe:
         self.responsible_for_customs = False
         self.next_company: [Handelsstufe] = None  # Type Hint hinzugefügt
         self.previous_company: [Handelsstufe] = None  # Type Hint hinzugefügt
+        self.intermediary_status: IntermediaryStatus | None = None
         self.identifier = identifier
         self.max_identifier = max_identifier
         if self.identifier > max_identifier:
@@ -54,8 +58,26 @@ class Handelsstufe:
 
     def __repr__(self):
         # Behalte die ausführliche Repräsentation für Debugging etc. bei
-        role = self.get_role_name()  # Nutze die neue Methode
-        return f"{role} ({self.country.name} - {self.country.code})"
+        role = self.get_role_name(True)  # Nutze die neue Methode
+        base_repr = f"{role} ({self.country.name} - {self.country.code})"
+
+        # --- NEU: Status hinzufügen, wenn es ein Zwischenhändler mit Status ist ---
+        # Prüfen, ob es ein Zwischenhändler ist (Position > 0 und < max-1)
+        is_intermediary = 0 < self.identifier < (self.max_identifier - 1)
+        if is_intermediary and self.intermediary_status is not None:
+            status_str = self.get_intermideary_status() # Hole den deutschen String
+            # Füge den Status in Klammern hinzu, wenn er nicht "Unbekannt" ist
+            if status_str != "Unbekannt":
+                 base_repr += f" [Status: {status_str}]"
+        # --- ENDE NEU ---
+
+        # --- Optional: Abweichende USt-ID hinzufügen ---
+        if self.changed_vat and self.new_country:
+            base_repr += f" [USt-ID: {self.new_country.code}]"
+        # --- ENDE Optional ---
+
+
+        return base_repr
 
     def get_role_name(self, long_name=False) -> str:
         """Gibt einen kurzen Namen für die Rolle der Firma zurück."""
@@ -73,6 +95,16 @@ class Handelsstufe:
                 if long_name:
                     return f"{self.identifier}. Zwischenhändler"
                 return f"{self.identifier}. ZH"
+
+    def get_intermideary_status(self) -> str:
+        """Gibt den Status des Zwischenhändlers als lesbaren String zurück."""
+        match self.intermediary_status:
+            case IntermediaryStatus.BUYER:
+                return "Erwerber"
+            case IntermediaryStatus.OCCURING_SUPPLIER:
+                return "Auftretender Lieferer"
+            case _:
+                return "Unbekannt"
 
     def add_previous_company_to_chain(self, company, previous_company):
         """
@@ -508,7 +540,8 @@ class Transaktion:
     def calculate_delivery_and_vat(self) -> list[Lieferung]:  # Umbenannt für Klarheit
         """
         Determines the moved/stationary supplies, their place of supply,
-        and their VAT treatment within the chain transaction.
+        and their VAT treatment within the chain transaction. Incorporates
+        the intermediary status according to § 3 Abs. 6a S. 4 UStG.
 
         Returns:
             List[Lieferung]: A list of Lieferung objects with determined
@@ -518,7 +551,7 @@ class Transaktion:
         """
         self.lieferungen = []
         bewegte_lieferung_gefunden = False
-        bewegte_lieferung_obj: [Lieferung] = None
+        bewegte_lieferung_obj: Lieferung | None = None # Type hint angepasst
 
         # 1. Transporteur finden
         shipping_company = self.find_shipping_company()
@@ -543,48 +576,74 @@ class Transaktion:
             self.lieferungen.append(Lieferung(lieferant, kunde))
 
         # 4. Bewegte Lieferung zuordnen (§ 3 Abs. 6a UStG)
-        # (Logik von vorher übernommen)
+        if not self.lieferungen: # Sicherstellen, dass Lieferungen existieren
+             raise ValueError("Keine Lieferungen in der Transaktion vorhanden.")
+
         if shipping_company == self.start_company:
-            if self.lieferungen:
-                self.lieferungen[0].is_moved_supply = True
-                bewegte_lieferung_obj = self.lieferungen[0]
-                bewegte_lieferung_gefunden = True
+            # Fall 1: Erster Lieferant transportiert -> Lieferung 1 ist bewegt
+            self.lieferungen[0].is_moved_supply = True
+            bewegte_lieferung_obj = self.lieferungen[0]
+            bewegte_lieferung_gefunden = True
         elif shipping_company == self.end_company:
-            if self.lieferungen:
-                self.lieferungen[-1].is_moved_supply = True
-                bewegte_lieferung_obj = self.lieferungen[-1]
-                bewegte_lieferung_gefunden = True
-        else:  # Zwischenhändler transportiert
-            lieferung_vom_zh = next(
-                (l for l in self.lieferungen if l.lieferant == shipping_company), None
-            )
+             # Fall 2: Letzter Abnehmer transportiert -> Letzte Lieferung ist bewegt
+            self.lieferungen[-1].is_moved_supply = True
+            bewegte_lieferung_obj = self.lieferungen[-1]
+            bewegte_lieferung_gefunden = True
+        else:  # Fall 3: Zwischenhändler transportiert
+            # Finde die Lieferung AN den transportierenden Zwischenhändler
             lieferung_an_zh = next(
                 (l for l in self.lieferungen if l.kunde == shipping_company), None
             )
+            # Finde die Lieferung VOM transportierenden Zwischenhändler
+            lieferung_vom_zh = next(
+                (l for l in self.lieferungen if l.lieferant == shipping_company), None
+            )
 
-            acts_as_supplier = False
-            # Verwendet der ZH die USt-Id des Abgangslandes (Land seines Lieferanten)?
-            # ODER: Hat er den Transport explizit im Auftrag seines Lieferanten durchgeführt? (Hier nicht prüfbar)
-            # Wir nutzen die 'changed_vat'-Logik als Indikator für die Ausnahme
-            if (
-                shipping_company.changed_vat
-                and lieferung_an_zh
-                and shipping_company.new_country  # Sicherstellen, dass new_country gesetzt ist
-                and shipping_company.new_country.code
-                == lieferung_an_zh.lieferant.country.code
-            ):
-                acts_as_supplier = True
+            # Priorität: Explizit gesetzter Status des Zwischenhändlers
+            if shipping_company.intermediary_status == IntermediaryStatus.OCCURING_SUPPLIER:
+                # Status "Auftretender Lieferer": Lieferung AN den ZH ist bewegt (§ 3 Abs. 6a S. 4 Alt. 2 UStG)
+                if lieferung_an_zh:
+                    lieferung_an_zh.is_moved_supply = True
+                    bewegte_lieferung_obj = lieferung_an_zh
+                    bewegte_lieferung_gefunden = True
+                else:
+                     # Sollte nicht passieren, wenn die Kette korrekt ist
+                     raise ValueError(f"Konnte Lieferung an transportierenden Zwischenhändler {shipping_company} nicht finden.")
 
-            if acts_as_supplier and lieferung_an_zh:
-                lieferung_an_zh.is_moved_supply = True
-                bewegte_lieferung_obj = lieferung_an_zh
-                bewegte_lieferung_gefunden = True
-            elif lieferung_vom_zh:
-                lieferung_vom_zh.is_moved_supply = True
-                bewegte_lieferung_obj = lieferung_vom_zh
-                bewegte_lieferung_gefunden = True
+            elif shipping_company.intermediary_status == IntermediaryStatus.BUYER:
+                 # Status "Erwerber": Lieferung VOM ZH ist bewegt (§ 3 Abs. 6a S. 4 Alt. 1 UStG)
+                 if lieferung_vom_zh:
+                     lieferung_vom_zh.is_moved_supply = True
+                     bewegte_lieferung_obj = lieferung_vom_zh
+                     bewegte_lieferung_gefunden = True
+                 else:
+                     # Sollte nicht passieren
+                     raise ValueError(f"Konnte Lieferung vom transportierenden Zwischenhändler {shipping_company} nicht finden.")
+
+            else:  # Priorität 2: Status "Nicht festgelegt" (None) -> Prüfung der USt-ID (§ 3 Abs. 6a S. 4 UStG)
+                # Prüfe, ob der Zwischenhändler die USt-ID des Abgangslandes verwendet
+                if (shipping_company.changed_vat  and shipping_company.new_country and shipping_company.new_country.code == start_country.code):
+                    # Fall: ZH verwendet USt-ID des Abgangslandes -> Lieferung AN ZH ist bewegt (wie "Auftretender Lieferer")
+                    if lieferung_an_zh:
+                        lieferung_an_zh.is_moved_supply = True
+                        bewegte_lieferung_obj = lieferung_an_zh
+                        bewegte_lieferung_gefunden = True
+                    else:
+                        raise ValueError(
+                            f"Konnte Lieferung an transportierenden Zwischenhändler {shipping_company} (mit USt-ID von {start_country.code}) nicht finden.")
+                else:
+                    # Fall: ZH verwendet eigene USt-ID oder die eines anderen Landes (NICHT Abgangsland)
+                    # -> Regelvermutung: Lieferung VOM ZH ist bewegt (wie "Erwerber")
+                    if lieferung_vom_zh:
+                        lieferung_vom_zh.is_moved_supply = True
+                        bewegte_lieferung_obj = lieferung_vom_zh
+                        bewegte_lieferung_gefunden = True
+                    else:
+                        raise ValueError(f"Konnte Lieferung vom transportierenden Zwischenhändler {shipping_company} nicht finden.")
+
 
         if not bewegte_lieferung_gefunden or bewegte_lieferung_obj is None:
+            # Dieser Fehler sollte durch die obigen Prüfungen eigentlich nicht mehr auftreten
             raise ValueError("Konnte die bewegte Lieferung nicht eindeutig zuordnen.")
 
         # 5. Ort der Lieferung UND Steuerbehandlung für alle Lieferungen bestimmen
