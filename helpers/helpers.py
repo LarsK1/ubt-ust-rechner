@@ -22,6 +22,7 @@ def get_countries() -> list[Country]:
 class VatTreatmentType(Enum):
     """Definiert mögliche umsatzsteuerliche Behandlungen einer Lieferung."""
 
+    OUT_OF_SCOPE = auto() #
     TAXABLE_NORMAL = auto()  # Steuerpflichtig, Lieferant schuldet USt
     TAXABLE_REVERSE_CHARGE = (
         auto()
@@ -211,6 +212,8 @@ class Lieferung:
         elif treatment == VatTreatmentType.NOT_TAXABLE:
             # Zeigt an, WO es nicht steuerbar ist
             return f"Nicht steuerbar ({place_code})"
+        elif treatment == VatTreatmentType.OUT_OF_SCOPE:
+            return "Nicht steuerbar (außerhalb EU)"
         elif treatment == VatTreatmentType.UNKNOWN:
             return "Unbekannt"
         else:  # Fallback
@@ -282,76 +285,107 @@ class Lieferung:
         return self.place_of_supply
 
     def determine_vat_treatment(self, start_country: Country, end_country: Country):
-        """
-        Bestimmt die umsatzsteuerliche Behandlung dieser Lieferung.
-        Muss NACH determine_place_of_supply aufgerufen werden.
-        """
-        if self.place_of_supply is None:
+        """Determines the VAT treatment based on supply type, place, and countries involved."""
+
+        place = self.place_of_supply
+        if place is None:
             self.vat_treatment = VatTreatmentType.UNKNOWN
-            self.invoice_note = "Ort der Lieferung konnte nicht bestimmt werden."
+            self.invoice_note = "Ort der Lieferung unbekannt"
             return
 
-        # Vereinfachung: Wir gehen davon aus, dass "Steuerbarkeit" primär von der EU-Mitgliedschaft abhängt.
-        # Eine Lieferung ist im Land des "place_of_supply" steuerbar, wenn dieses in der EU ist.
-        # Detailliertere Prüfungen (z.B. § 1 UStG) sind hier nicht implementiert.
+        # Nutze das Land der USt-ID, falls abweichend, sonst Heimatland
+        lieferant_country = self.lieferant.country
+        kunde_country = self.kunde.country
 
-        is_place_in_eu = self.place_of_supply.EU
-        is_supplier_in_eu = self.lieferant.country.EU
-        is_customer_in_eu = self.kunde.country.EU
-        is_start_in_eu = start_country.EU
-        is_end_in_eu = end_country.EU
-
-        # 1. Ist die Lieferung überhaupt im Land des Lieferorts steuerbar?
-        if not is_place_in_eu:
-            self.vat_treatment = VatTreatmentType.NOT_TAXABLE
-            self.invoice_note = f"Nicht steuerbar (Ort: {self.place_of_supply.name})"
-            return
-
-        # 2. Prüfung auf Steuerbefreiungen (nur für die bewegte Lieferung relevant!)
+        # --- Moved Supply Logic ---
         if self.is_moved_supply:
-            # 2a. Innergemeinschaftliche Lieferung (§ 4 Nr. 1b, § 6a UStG)?
-            # Bedingung: Ort im Inland (EU), Kunde in anderem EU-Staat, Transport endet dort, Kunde verwendet USt-Id.
-            if (
-                is_place_in_eu
-                and is_customer_in_eu
-                and self.place_of_supply.code != self.kunde.country.code
-                and end_country.code == self.kunde.country.code
-            ):
-                # Annahme: Kunde verwendet gültige USt-Id des Ziellandes & Nachweise liegen vor.
+            is_eu_transaction = place.EU and end_country.EU # Grundprüfung EU
+
+            # Prüfung auf Dreiecksgeschäft ---
+            is_triangle = False
+            # Stelle sicher, dass das Lieferungsobjekt eine Referenz zur Transaktion hat
+            if hasattr(self, 'transaction') and self.transaction:
+                try:
+                    # Rufe die Prüfmethode der Transaktion auf
+                    is_triangle = self.transaction.is_triangular_transaction()
+                except Exception as e:
+                    # Optional: Fehler loggen, falls die Prüfung fehlschlägt
+                    print(f"DEBUG: Fehler bei Prüfung auf Dreiecksgeschäft: {e}")
+                    # Fahre fort, als wäre es kein Dreiecksgeschäft
+
+            if is_eu_transaction and is_triangle:
+                # Fall: Bewegte Lieferung im Rahmen eines vereinfachten Dreiecksgeschäfts (§ 25b UStG)
+                # Diese ist IMMER eine steuerfreie innergemeinschaftliche Lieferung.
                 self.vat_treatment = VatTreatmentType.EXEMPT_IC_SUPPLY
-                self.invoice_note = "Steuerfreie innergemeinschaftliche Lieferung"
-                # Ggf. Hinweis auf § 6a UStG oder entspr. EU-Artikel
-                return  # Befreit, keine weitere Prüfung nötig
+                # Spezifischer Rechnungshinweis
+                self.invoice_note = "Steuerfreie innergem. Lieferung (Dreiecksgeschäft)"
+                # Optional: Gesetzliche Referenz hinzufügen
+                self.invoice_note += " gem. § 25b UStG / Art. 141 MwStSystRL"
 
-            # 2b. Ausfuhrlieferung (§ 4 Nr. 1a, § 6 UStG)?
-            # Bedingung: Ort im Inland (EU), Kunde im Drittland, Transport endet dort.
-            if is_place_in_eu and not is_customer_in_eu and not is_end_in_eu:
-                # Annahme: Ausfuhrnachweise liegen vor.
+            # --- Bestehende Logik für andere Fälle der bewegten Lieferung ---
+            # (Nur ausführen, wenn es KEIN Dreiecksgeschäft ist oder nicht EU)
+            elif is_eu_transaction: # Standard EU-Fall (kein Dreieck)
+                if lieferant_country.EU and kunde_country.EU and lieferant_country != kunde_country:
+                    # Standard Innergemeinschaftliche Lieferung prüfen
+                    # Hier wird angenommen, dass der Kunde eine gültige USt-ID eines anderen EU-Landes verwendet.
+                    # Eine detailliertere Prüfung der USt-ID des Kunden könnte hier sinnvoll sein.
+                    self.vat_treatment = VatTreatmentType.EXEMPT_IC_SUPPLY
+                    self.invoice_note = "Steuerfreie innergem. Lieferung (§ 6a UStG)"
+                    # TODO: Ggf. Prüfung der USt-ID des Kunden hinzufügen (Herkunft, Gültigkeit)
+                elif lieferant_country == kunde_country and place == lieferant_country:
+                    # Lieferung innerhalb desselben EU-Landes
+                    self.vat_treatment = VatTreatmentType.TAXABLE_NORMAL
+                    self.invoice_note = f"Steuerpflichtig in {place.code}"
+                else:
+                    # Fallback für andere EU-Konstellationen (sollte genauer geprüft werden)
+                    self.vat_treatment = VatTreatmentType.TAXABLE_NORMAL
+                    self.invoice_note = f"Steuerpflichtig in {place.code} (Prüfung nötig)"
+
+            elif place.EU and not end_country.EU: # Export aus EU
                 self.vat_treatment = VatTreatmentType.EXEMPT_EXPORT
-                self.invoice_note = "Steuerfreie Ausfuhrlieferung"
-                # Ggf. Hinweis auf § 6 UStG oder entspr. EU-Artikel
-                return  # Befreit, keine weitere Prüfung nötig
+                self.invoice_note = "Steuerfreie Ausfuhrlieferung (§ 6 UStG)"
 
-        # 3. Wenn steuerbar und nicht befreit: Wer schuldet die Steuer? (Reverse Charge?)
-        # Prüfung auf Reverse Charge (§ 13b UStG / Art. 194 MwStSystRL)
-        # Vereinfachter Fall: Leistungsempfänger im Inland (Ort der Lief.), leistender Unternehmer im Ausland.
-        if (
-            is_place_in_eu
-            and self.place_of_supply.code
-            == self.kunde.country.code  # Kunde sitzt im Land des Lieferorts
-            and self.place_of_supply.code != self.lieferant.country.code
-        ):  # Lieferant sitzt NICHT im Land des Lieferorts
-            # Annahme: Kunde ist Unternehmer / jur. Person, die für Reverse Charge in Frage kommt.
-            self.vat_treatment = VatTreatmentType.TAXABLE_REVERSE_CHARGE
-            self.invoice_note = "Steuerschuldnerschaft des Leistungsempfängers"
-            # Ggf. Hinweis auf § 13b UStG oder Art. 194 MwStSystRL
-            return
+            elif not place.EU: # Lieferung startet außerhalb der EU
+                 self.vat_treatment = VatTreatmentType.OUT_OF_SCOPE
+                 self.invoice_note = f"Nicht steuerbar (außerhalb EU: {place.code})"
+            # Ggf. weitere Fälle (z.B. Import) hier behandeln
 
-        # 4. Standardfall: Steuerbar, nicht befreit, kein Reverse Charge
-        self.vat_treatment = VatTreatmentType.TAXABLE_NORMAL
-        self.invoice_note = f"Umsatzsteuerpflichtig in {self.place_of_supply.name}"
+        # --- Stationary Supply Logic ---
+        else: # Ruhende Lieferung
+            if place.EU:
+                # --- Bestehende Logik für ruhende Lieferungen ---
+                # Prüfe auf Reverse Charge Möglichkeit (häufig bei ruhenden Lieferungen)
+                # Vereinfachte Annahme: RC wenn Lieferant nicht im Lieferort ansässig, Kunde aber schon (oder dort registriert)
+                # Eine genauere Prüfung (Unternehmerstatus etc.) wäre in der Praxis nötig.
 
-    # Hier müsste die Rechnung die USt des Landes von place_of_supply ausweisen.
+                # Erneute Prüfung auf Dreieck für spezifischen Hinweis bei RC
+                is_triangle_stationary_check = False
+                if hasattr(self, 'transaction') and self.transaction:
+                    try: is_triangle_stationary_check = self.transaction.is_triangular_transaction()
+                    except: pass # Fehler hier ignorieren
+
+                # Beispielhafte RC-Prüfung (vereinfacht)
+                # Benötigt ggf. eine Methode wie self.kunde.is_registered_in(place) in Handelsstufe
+                if (lieferant_country != place and kunde_country == place) or \
+                   (lieferant_country != place and hasattr(self.kunde, 'is_registered_in') and self.kunde.is_registered_in(place)):
+                    self.vat_treatment = VatTreatmentType.TAXABLE_REVERSE_CHARGE
+                    # Spezifischer Hinweis für die zweite Lieferung im Dreiecksgeschäft
+                    if is_triangle_stationary_check and self.kunde == self.transaction.end_company:
+                         self.invoice_note = f"Reverse Charge (Dreiecksgeschäft, Steuerschuldner: Kunde in {place.code})"
+                    else:
+                         self.invoice_note = f"Reverse Charge (Steuerschuldner: Kunde in {place.code})"
+                else:
+                    # Standardfall: Steuerpflichtig im Lieferort
+                    self.vat_treatment = VatTreatmentType.TAXABLE_NORMAL
+                    self.invoice_note = f"Steuerpflichtig in {place.code}"
+            else: # Ort der ruhenden Lieferung ist außerhalb der EU
+                self.vat_treatment = VatTreatmentType.OUT_OF_SCOPE
+                self.invoice_note = f"Nicht steuerbar (außerhalb EU: {place.code})"
+
+        # Fallback, falls keine Behandlung ermittelt wurde
+        if self.vat_treatment == VatTreatmentType.UNKNOWN:
+             self.invoice_note = "Steuerbehandlung konnte nicht ermittelt werden."
+
 
 
 class Transaktion:
@@ -441,6 +475,17 @@ class Transaktion:
         a = firmen[0]  # Erster Lieferer
         b = firmen[1]  # Mittlerer Unternehmer (Erwerber)
         c = firmen[2]  # Letzter Abnehmer
+
+        # Stelle sicher, dass der Transporteur bekannt ist
+        shipping_company = self.find_shipping_company()
+        if shipping_company is None:
+             # Wenn kein Transporteur definiert ist, kann es kein Dreiecksgeschäft sein
+             # (oder die Analyse ist unvollständig)
+             return False
+        # 6. Wird der Transport von C (letzter Abnehmer) veranlasst?
+        if shipping_company == c:
+            # Wenn C transportiert -> KEIN vereinfachtes Dreiecksgeschäft
+            return False
 
         # 2. Alle in der EU?
         if not (a.country.EU and b.country.EU and c.country.EU):
