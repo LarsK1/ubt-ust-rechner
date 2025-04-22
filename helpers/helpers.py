@@ -510,23 +510,22 @@ class Transaktion:
         # Wenn alle Prüfungen bestanden wurden:
         return True
 
-    def determine_registration_obligations(
-        self,
-    ) -> dict[Handelsstufe, set[Country]]:
+    def determine_registration_obligations(self) -> dict[Handelsstufe, set[Country]]:
         """
         Ermittelt die wahrscheinlichen EU-Umsatzsteuer-Registrierungspflichten
-        für jede beteiligte Firma basierend auf den Lieferungen.
+        für jede beteiligte Firma basierend auf den Lieferungen, unter
+        Berücksichtigung der Vereinfachung für Dreiecksgeschäfte.
 
         Returns:
-            dict[Handelsstufe, set[Country]]: Ein Dictionary, das jeder Firma
-                                              ein Set von Ländern zuordnet,
-                                              in denen eine Registrierung
-                                              wahrscheinlich notwendig ist.
+                dict[Handelsstufe, set[Country]]: Ein Dictionary, das jeder Firma
+                                                                                  ein Set von Ländern zuordnet,
+                                                                                  in denen eine Registrierung
+                                                                                  wahrscheinlich notwendig ist.
         """
-        # Initialisiere ein Dictionary für jede Firma mit einem leeren Set für Länder
         registration_needs = {
             firma: set() for firma in self.get_ordered_chain_companies()
         }
+        firmen = self.get_ordered_chain_companies()
 
         # Stelle sicher, dass Lieferungen berechnet wurden
         if not self.lieferungen:
@@ -538,6 +537,34 @@ class Transaktion:
         if not self.lieferungen:
             return registration_needs  # Immer noch leer, gib leeres Dict zurück
 
+        # --- Sonderbehandlung für Dreiecksgeschäfte ---
+        if self.is_triangular_transaction():
+            # Bei Dreiecksgeschäften gelten vereinfachte Registrierungsregeln
+            if (
+                len(firmen) == 3
+            ):  # Sollte immer der Fall sein, wenn is_triangular_transaction True ist
+                a, b, c = firmen[0], firmen[1], firmen[2]
+
+                # A (Erster Lieferer) muss in seinem Land (EU) registriert sein
+                if a.country.EU:
+                    registration_needs[a].add(a.country)
+
+                # B (Mittlerer Unternehmer) muss NUR in seinem Land (EU) registriert sein
+                # Die Vereinfachung erspart ihm die Registrierung in A's und C's Land
+                if b.country.EU:
+                    registration_needs[b].add(b.country)
+
+                # C (Letzter Abnehmer) muss in seinem Land (EU) registriert sein (für Erwerb/RC)
+                if c.country.EU:
+                    registration_needs[c].add(c.country)
+
+                # Für Dreiecksgeschäfte ist die Prüfung hier abgeschlossen
+                return registration_needs
+            else:
+                # Fallback, sollte nicht passieren bei korrekter is_triangular_transaction Logik
+                pass  # Fährt mit Standardlogik fort, was aber bei Dreiecksgeschäft falsch wäre
+
+        # --- Standard-Logik (wenn KEIN Dreiecksgeschäft vorliegt) ---
         # Grundannahme: Jede EU-Firma ist in ihrem Heimatland registriert
         for firma in registration_needs.keys():
             if firma.country.EU:
@@ -551,7 +578,7 @@ class Transaktion:
             place = lief.place_of_supply
             treatment = lief.vat_treatment
 
-            # TODO: Überspringe, wenn kein Lieferort bestimmt oder außerhalb EU (Fokus auf EU)
+            # Überspringe, wenn kein Lieferort bestimmt oder außerhalb EU (Fokus auf EU)
             if not place or not place.EU:
                 continue
 
@@ -568,17 +595,17 @@ class Transaktion:
             # Bei TAXABLE_REVERSE_CHARGE hat der Lieferant i.d.R. keine *zusätzliche* Registrierungspflicht *nur* wegen dieser Lieferung im Zielland
 
             # 2. Pflichten des Kunden (kunde)
-            if treatment == VatTreatmentType.EXEMPT_IC_SUPPLY:
-                # Kunde tätigt innergemeinschaftlichen Erwerb im Bestimmungsland (seinem Land)
-                # -> Registrierung im eigenen Land nötig (ist meist eh der Fall, aber zur Sicherheit)
-                if kunde.country.EU:
-                    registration_needs[kunde].add(kunde.country)
-            elif treatment == VatTreatmentType.TAXABLE_REVERSE_CHARGE:
-                # Kunde schuldet die Steuer im Empfangsland (place) -> Registrierung dort nötig
-                if kunde.country.EU:
-                    registration_needs[kunde].add(
-                        place
-                    )  # place ist hier das Land des Kunden
+            # Kunde tätigt innergem. Erwerb (bei EXEMPT_IC_SUPPLY an ihn) ODER
+            # schuldet Steuer im Empfangsland (bei TAXABLE_REVERSE_CHARGE)
+            if (
+                treatment == VatTreatmentType.EXEMPT_IC_SUPPLY
+                or treatment == VatTreatmentType.TAXABLE_REVERSE_CHARGE
+            ):
+                # Kunde muss im Land des Erwerbs / der RC-Leistung registriert sein.
+                # Das ist i.d.R. das 'place_of_supply' der RC-Leistung oder das Land des Kunden beim Erwerb.
+                # Wir nehmen hier vereinfacht an, dass 'place' relevant ist.
+                if kunde.country.EU:  # Nur relevant für EU-Kunden
+                    registration_needs[kunde].add(place)
 
         return registration_needs
 
