@@ -303,6 +303,175 @@ TEST_SCENARIOS = [
             2: {"IT"},  # C nur in IT
         },
     },
+    # --- NEU: Szenario 6: DE -> AT -> IT, A transportiert (Dreieck) ---
+    {
+        "description": "DE -> AT -> IT (Dreieck), A transportiert",
+        "companies": [
+            {
+                "id": 0,
+                "country_code": "DE",
+                "ship": True,  # A transportiert
+                "customs": False,
+                "vat_change_code": None,
+                "intermediary_status": None,
+            },
+            {
+                "id": 1,
+                "country_code": "AT",
+                "ship": False,
+                "customs": False,
+                "vat_change_code": None,
+                "intermediary_status": None,
+            },
+            {
+                "id": 2,
+                "country_code": "IT",
+                "ship": False,
+                "customs": False,
+                "vat_change_code": None,
+                "intermediary_status": None,
+            },
+        ],
+        "expected_deliveries": [
+            # A -> B: Bewegt, Ort DE, Steuerfrei IG (DE->AT)
+            {
+                "from": 0,
+                "to": 1,
+                "moved": True,
+                "place": "DE",
+                "vat": VatTreatmentType.EXEMPT_IC_SUPPLY,
+            },
+            # B -> C: Ruhend, Ort IT, RC (AT->IT in IT)
+            {
+                "from": 1,
+                "to": 2,
+                "moved": False,
+                "place": "IT",
+                "vat": VatTreatmentType.TAXABLE_REVERSE_CHARGE,
+            },
+        ],
+        "expected_triangle": True,  # Dreiecksgeschäft
+        "expected_registrations": {  # Vereinfachte Registrierung
+            0: {"DE"},
+            1: {"AT"},
+            2: {"IT"},
+        },
+    },
+    # --- Szenario 7: DE -> AT -> IT, B transportiert als Abnehmer ---
+    {
+        "description": "DE -> AT -> IT, B transportiert als Abnehmer",
+        "companies": [
+            {
+                "id": 0,
+                "country_code": "DE",
+                "ship": False,
+                "customs": False,
+                "vat_change_code": None,
+                "intermediary_status": None,
+            },
+            {
+                "id": 1,
+                "country_code": "AT",
+                "ship": True,  # B transportiert
+                "customs": False,
+                "vat_change_code": None,
+                "intermediary_status": IntermediaryStatus.BUYER,  # als Abnehmer
+            },
+            {
+                "id": 2,
+                "country_code": "IT",
+                "ship": False,
+                "customs": False,
+                "vat_change_code": None,
+                "intermediary_status": None,
+            },
+        ],
+        "expected_deliveries": [
+            # A -> B: Ruhend, Ort DE, Steuerpflichtig DE
+            {
+                "from": 0,
+                "to": 1,
+                "moved": False,
+                "place": "DE",
+                "vat": VatTreatmentType.TAXABLE_NORMAL,
+            },
+            # B -> C: Bewegt, Ort DE, Steuerfrei IG (DE->IT)
+            {
+                "from": 1,
+                "to": 2,
+                "moved": True,
+                "place": "DE",
+                "vat": VatTreatmentType.EXEMPT_IC_SUPPLY,
+            },
+        ],
+        "expected_triangle": False,  # Kein Dreieck nach Vereinfachung
+        "expected_registrations": {
+            0: {"DE"},  # A braucht DE (für A->B)
+            1: {
+                "DE",
+                "AT",
+                "IT",
+            },  # B braucht DE (A->B Erwerb & B->C Lief), AT (home), IT (B->C Erwerb)
+            2: {"IT"},  # C braucht IT (home)
+        },
+    },
+    # --- Szenario 8: DE -> AT -> IT, C transportiert ---
+    {
+        "description": "DE -> AT -> IT, C transportiert",
+        "companies": [
+            {
+                "id": 0,
+                "country_code": "DE",
+                "ship": False,
+                "customs": False,
+                "vat_change_code": None,
+                "intermediary_status": None,
+            },
+            {
+                "id": 1,
+                "country_code": "AT",
+                "ship": False,
+                "customs": False,
+                "vat_change_code": None,
+                "intermediary_status": None,
+            },
+            {
+                "id": 2,
+                "country_code": "IT",
+                "ship": True,  # C transportiert
+                "customs": False,
+                "vat_change_code": None,
+                "intermediary_status": None,
+            },
+        ],
+        "expected_deliveries": [
+            # A -> B: Ruhend, Ort DE, Steuerpflichtig DE
+            {
+                "from": 0,
+                "to": 1,
+                "moved": False,
+                "place": "DE",
+                "vat": VatTreatmentType.TAXABLE_NORMAL,
+            },
+            # B -> C: Bewegt, Ort DE, Steuerfrei IG (DE->IT)
+            {
+                "from": 1,
+                "to": 2,
+                "moved": True,
+                "place": "DE",
+                "vat": VatTreatmentType.EXEMPT_IC_SUPPLY,
+            },
+        ],
+        "expected_triangle": False,  # Kein Dreieck nach Vereinfachung
+        "expected_registrations": {
+            0: {"DE"},  # A braucht DE (für A->B)
+            1: {
+                "DE",
+                "AT",
+            },  # B braucht DE (A->B Erwerb & B->C Lief), AT (home), IT (B->C Erwerb)
+            2: {"IT"},  # C braucht IT (home)
+        },
+    },
 ]
 
 
