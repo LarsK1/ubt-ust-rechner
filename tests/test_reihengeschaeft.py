@@ -173,7 +173,7 @@ TEST_SCENARIOS = [
             {
                 "from": 0,
                 "to": 1,
-                "moved": True,  # Erwartung: Bewegt
+                "moved": True,
                 "place": "DE",
                 "vat": VatTreatmentType.EXEMPT_IC_SUPPLY,
             },
@@ -181,7 +181,7 @@ TEST_SCENARIOS = [
             {
                 "from": 1,
                 "to": 2,
-                "moved": False,  # Erwartung: Ruhend
+                "moved": False,
                 "place": "AT",
                 "vat": VatTreatmentType.TAXABLE_NORMAL,
             },
@@ -190,7 +190,7 @@ TEST_SCENARIOS = [
         "expected_registrations": {
             0: {"DE"},  # A braucht DE (für IG Supply)
             1: {
-                "AT"
+                "AT",
             },  # B braucht AT (für IG Erwerb von A und steuerbare Lief B->C in AT)
             2: {"AT"},  # C braucht AT
         },
@@ -318,6 +318,8 @@ def create_company_chain(company_configs):
         )
         company.responsible_for_shippment = config["ship"]
         company.responsible_for_customs = config["customs"]
+        company.intermediary_status = config["intermediary_status"]
+
         if config["vat_change_code"]:
             company.set_changed_vat_id(COUNTRIES[config["vat_change_code"]])
         companies.append(company)
