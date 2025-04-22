@@ -387,31 +387,29 @@ TEST_SCENARIOS = [
             },
         ],
         "expected_deliveries": [
-            # A -> B: Ruhend, Ort DE, Steuerpflichtig DE
+            # A -> B
             {
                 "from": 0,
                 "to": 1,
-                "moved": False,
-                "place": "DE",
-                "vat": VatTreatmentType.TAXABLE_NORMAL,
-            },
-            # B -> C: Bewegt, Ort DE, Steuerfrei IG (DE->IT)
-            {
-                "from": 1,
-                "to": 2,
                 "moved": True,
                 "place": "DE",
                 "vat": VatTreatmentType.EXEMPT_IC_SUPPLY,
             },
+            # B -> C
+            {
+                "from": 1,
+                "to": 2,
+                "moved": False,
+                "place": "IT",
+                "vat": VatTreatmentType.TAXABLE_REVERSE_CHARGE,
+            },
         ],
-        "expected_triangle": False,  # Kein Dreieck nach Vereinfachung
+        "expected_triangle": True,
         "expected_registrations": {
             0: {"DE"},  # A braucht DE (für A->B)
             1: {
-                "DE",
                 "AT",
-                "IT",
-            },  # B braucht DE (A->B Erwerb & B->C Lief), AT (home), IT (B->C Erwerb)
+            },  # AT (home)
             2: {"IT"},  # C braucht IT (home)
         },
     },
