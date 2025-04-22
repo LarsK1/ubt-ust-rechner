@@ -34,8 +34,8 @@ class VatTreatmentType(Enum):
 
 
 class IntermediaryStatus(Enum):
+    SUPPLIER = auto()
     BUYER = auto()
-    OCCURING_SUPPLIER = auto()
 
 
 class Handelsstufe:
@@ -101,10 +101,10 @@ class Handelsstufe:
     def get_intermideary_status(self) -> str:
         """Gibt den Status des Zwischenhändlers als lesbaren String zurück."""
         match self.intermediary_status:
+            case IntermediaryStatus.SUPPLIER:
+                return "Lieferer"
             case IntermediaryStatus.BUYER:
-                return "Erwerber"
-            case IntermediaryStatus.OCCURING_SUPPLIER:
-                return "Auftretender Lieferer"
+                return "Abnehmer"
             case _:
                 return "Unbekannt"
 
@@ -326,27 +326,41 @@ class Lieferung:
             # --- Bestehende Logik für andere Fälle der bewegten Lieferung ---
             # (Nur ausführen, wenn es KEIN Dreiecksgeschäft ist oder nicht EU)
             elif is_eu_transaction:  # Standard EU-Fall (kein Dreieck)
-                if (
-                    lieferant_country.EU
-                    and kunde_country.EU
-                    and lieferant_country != kunde_country
-                ):
-                    # Standard Innergemeinschaftliche Lieferung prüfen
-                    # Hier wird angenommen, dass der Kunde eine gültige USt-ID eines anderen EU-Landes verwendet.
-                    # Eine detailliertere Prüfung der USt-ID des Kunden könnte hier sinnvoll sein.
+                # --- NEUE PRÜFUNG ---
+                # 1. Ist es eine grenzüberschreitende Lieferung innerhalb der EU?
+                if place != end_country:
+                    # Ja, Ware bewegt sich von 'place' nach 'end_country'.
+                    # Dies ist der klassische Fall einer innergemeinschaftlichen Lieferung.
+                    # Annahme: Formelle Voraussetzungen (USt-IDs etc.) sind erfüllt.
                     self.vat_treatment = VatTreatmentType.EXEMPT_IC_SUPPLY
-                    self.invoice_note = "Steuerfreie innergem. Lieferung (§ 6a UStG)"
-                    # TODO: Ggf. Prüfung der USt-ID des Kunden hinzufügen (Herkunft, Gültigkeit)
-                elif lieferant_country == kunde_country and place == lieferant_country:
-                    # Lieferung innerhalb desselben EU-Landes
-                    self.vat_treatment = VatTreatmentType.TAXABLE_NORMAL
-                    self.invoice_note = f"Steuerpflichtig in {place.code}"
+                    self.invoice_note = f"Steuerfreie innergem. Lieferung ({place.code} -> {end_country.code})"
+                    # TODO: Ggf. Prüfung der USt-ID des Kunden hinzufügen
+
+                # 2. Ist es eine rein inländische Lieferung im 'place'-Land?
+                # (Transport beginnt und endet im selben Land)
+                elif place == end_country:
+                    # Prüfe, ob Lieferant und Kunde auch im 'place'-Land sind
+                    if lieferant_country == place and kunde_country == place:
+                        # Klassische Inlandslieferung
+                        self.vat_treatment = VatTreatmentType.TAXABLE_NORMAL
+                        self.invoice_note = f"Steuerpflichtig in {place.code}"
+                    else:
+                        # Lieferung findet im Inland ('place') statt, aber Lieferant oder Kunde
+                        # kommt aus einem anderen Land. Grundsätzlich steuerpflichtig in 'place'.
+                        # Hier könnte man noch auf Reverse Charge prüfen, wenn lieferant != place und kunde == place.
+                        # Vereinfachung: Erstmal als normal steuerpflichtig behandeln.
+                        self.vat_treatment = VatTreatmentType.TAXABLE_NORMAL
+                        self.invoice_note = (
+                            f"Steuerpflichtig in {place.code} (Inland, ggf. RC prüfen)"
+                        )
+
+                # 3. Fallback (sollte durch obige Logik abgedeckt sein)
                 else:
-                    # Fallback für andere EU-Konstellationen (sollte genauer geprüft werden)
                     self.vat_treatment = VatTreatmentType.TAXABLE_NORMAL
                     self.invoice_note = (
                         f"Steuerpflichtig in {place.code} (Prüfung nötig)"
                     )
+                # --- ENDE NEUE PRÜFUNG ---
 
             elif place.EU and not end_country.EU:  # Export aus EU
                 self.vat_treatment = VatTreatmentType.EXEMPT_EXPORT
@@ -613,17 +627,21 @@ class Transaktion:
             # Bei TAXABLE_REVERSE_CHARGE hat der Lieferant i.d.R. keine *zusätzliche* Registrierungspflicht *nur* wegen dieser Lieferung im Zielland
 
             # 2. Pflichten des Kunden (kunde)
-            # Kunde tätigt innergem. Erwerb (bei EXEMPT_IC_SUPPLY an ihn) ODER
-            # schuldet Steuer im Empfangsland (bei TAXABLE_REVERSE_CHARGE)
-            if (
-                treatment == VatTreatmentType.EXEMPT_IC_SUPPLY
-                or treatment == VatTreatmentType.TAXABLE_REVERSE_CHARGE
-            ):
-                # Kunde muss im Land des Erwerbs / der RC-Leistung registriert sein.
-                # Das ist i.d.R. das 'place_of_supply' der RC-Leistung oder das Land des Kunden beim Erwerb.
-                # Wir nehmen hier vereinfacht an, dass 'place' relevant ist.
-                if kunde.country.EU:  # Nur relevant für EU-Kunden
-                    registration_needs[kunde].add(place)
+            if treatment == VatTreatmentType.EXEMPT_IC_SUPPLY:
+                # Kunde tätigt innergemeinschaftlichen Erwerb im Bestimmungsland des Transports.
+                # Das Bestimmungsland ist das Land, in dem der Transport endet.
+                # Wir holen uns das Land des letzten Unternehmens in der Kette als Bestimmungsland.
+                destination_country_for_acquisition = self.end_company.country
+                if kunde.country.EU and destination_country_for_acquisition.EU:
+                    # Kunde muss im Bestimmungsland des Transports für den Erwerb registriert sein.
+                    registration_needs[kunde].add(destination_country_for_acquisition)
+
+            elif treatment == VatTreatmentType.TAXABLE_REVERSE_CHARGE:
+                # Kunde schuldet die Steuer im Empfangsland (place) -> Registrierung dort nötig
+                if kunde.country.EU:
+                    registration_needs[kunde].add(
+                        place
+                    )  # place ist hier das Land der RC-Leistung
 
         return registration_needs
 
@@ -690,10 +708,7 @@ class Transaktion:
             )
 
             # Priorität: Explizit gesetzter Status des Zwischenhändlers
-            if (
-                shipping_company.intermediary_status
-                == IntermediaryStatus.OCCURING_SUPPLIER
-            ):
+            if shipping_company.intermediary_status == IntermediaryStatus.BUYER:
                 # Status "Auftretender Lieferer": Lieferung AN den ZH ist bewegt (§ 3 Abs. 6a S. 4 Alt. 2 UStG)
                 if lieferung_an_zh:
                     lieferung_an_zh.is_moved_supply = True
@@ -705,7 +720,7 @@ class Transaktion:
                         f"Konnte Lieferung an transportierenden Zwischenhändler {shipping_company} nicht finden."
                     )
 
-            elif shipping_company.intermediary_status == IntermediaryStatus.BUYER:
+            elif shipping_company.intermediary_status == IntermediaryStatus.SUPPLIER:
                 # Status "Erwerber": Lieferung VOM ZH ist bewegt (§ 3 Abs. 6a S. 4 Alt. 1 UStG)
                 if lieferung_vom_zh:
                     lieferung_vom_zh.is_moved_supply = True

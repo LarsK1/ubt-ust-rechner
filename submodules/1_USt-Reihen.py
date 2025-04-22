@@ -5,7 +5,13 @@ from graphviz import Digraph
 
 from helpers.countries import Country
 from helpers.fixed_header import st_fixed_container
-from helpers.helpers import get_countries, Handelsstufe, Transaktion, Lieferung, IntermediaryStatus
+from helpers.helpers import (
+    get_countries,
+    Handelsstufe,
+    Transaktion,
+    Lieferung,
+    IntermediaryStatus,
+)
 
 st.title("USt-Reihengeschäfte")
 
@@ -165,20 +171,33 @@ def Eingabe_1():
                             icon="✅",
                         )
                         break
-            if transport_firma != "keine Auswahl" and "Z" in transport_firma.get_role_name():
+            if (
+                transport_firma != "keine Auswahl"
+                and "Z" in transport_firma.get_role_name()
+            ):
                 st.info(
                     f"Da der {transport_firma.get_role_name(True)} den Transport beauftragt, ist sein Status relevant.",
-                    icon="ℹ️")
-                intermediar = st.selectbox("Status", ["keine Auswahl", "Auftretender Lieferer", "Erwerber"])
+                    icon="ℹ️",
+                )
+                intermediar = st.selectbox(
+                    "Status",
+                    [
+                        "keine Auswahl",
+                        "Abnehmer",
+                        "Lieferer",
+                    ],
+                )
                 if intermediar != "keine Auswahl":
                     for firma in laender_firmen:
                         if firma.identifier == transport_firma.identifier:
                             match intermediar:
-                                case "Auftretender Lieferer":
-                                    firma.intermediary_status = IntermediaryStatus.OCCURING_SUPPLIER
-                                    endanalyse_benötigte_daten = True
-                                case "Erwerber":
+                                case "Abnehmer":
                                     firma.intermediary_status = IntermediaryStatus.BUYER
+                                    endanalyse_benötigte_daten = True
+                                case "Lieferer":
+                                    firma.intermediary_status = (
+                                        IntermediaryStatus.SUPPLIER
+                                    )
                                     endanalyse_benötigte_daten = True
                                 case _:
                                     raise ValueError("Unbekannter Intermediary Status")
@@ -239,12 +258,14 @@ def Eingabe_1():
                 if company.changed_vat and company.new_country:
                     zusatz_infos.append(f"abw. USt-ID: {company.new_country.code}\n")
                 if company.intermediary_status is not None:
-                     zusatz_infos.append(f"Status: {company.get_intermideary_status()}\n")
+                    zusatz_infos.append(
+                        f"Status: {company.get_intermideary_status()}\n"
+                    )
 
                 if zusatz_infos:
                     company_text += "\n" + "".join(zusatz_infos)
                 else:
-                      company_text += "\n--------\n " # Minimaler Platzhalter für Höhe
+                    company_text += "\n--------\n "  # Minimaler Platzhalter für Höhe
                 company_text += f"{company.country.name}({company.country.code})"
                 if company.country.EU:
                     company_text += ", EU"
@@ -252,25 +273,25 @@ def Eingabe_1():
                     company_text += ", Drittland"
                 # Farbliche Markierung (Transporteur/Zoll)
                 fillcolor = ""
-                if company.responsible_for_shippment and company.responsible_for_customs:
-                    fillcolor = "#ffa500:#b2d800" # Orange/Grün Gradient
+                if (
+                    company.responsible_for_shippment
+                    and company.responsible_for_customs
+                ):
+                    fillcolor = "#ffa500:#b2d800"  # Orange/Grün Gradient
                 elif company.responsible_for_shippment:
-                    fillcolor = "#ffa500" # Orange
+                    fillcolor = "#ffa500"  # Orange
                 elif company.responsible_for_customs:
-                    fillcolor = "#b2d800" # Grün
+                    fillcolor = "#b2d800"  # Grün
 
                 if fillcolor:
                     s.node(
                         str(company.identifier),
                         company_text,
                         style="filled",
-                        fillcolor=fillcolor
+                        fillcolor=fillcolor,
                     )
                 else:
-                     s.node(
-                        str(company.identifier),
-                        company_text
-                    )
+                    s.node(str(company.identifier), company_text)
 
         for company in laender_firmen:
             if company.next_company:
@@ -452,10 +473,12 @@ def Analyse_1():
                         if i < len(alle_lieferungen) - 1:
                             st.divider()  # Trennlinie nach jeder Rechnung
             if alle_lieferungen:
-                try:# Nur anzeigen, wenn Berechnung erfolgreich war
+                try:  # Nur anzeigen, wenn Berechnung erfolgreich war
                     registration_data = transaction.determine_registration_obligations()
                     with st.expander(
-                            "Mögliche Registrierungspflichten (EU)", icon="🇪🇺", expanded=False
+                        "Mögliche Registrierungspflichten (EU)",
+                        icon="🇪🇺",
+                        expanded=False,
                     ):
                         st.markdown("#### Notwendige USt-Registrierungen pro Firma")
                         st.caption(
@@ -463,12 +486,16 @@ def Analyse_1():
                         )
 
                         firma: Handelsstufe
-                        registrierungen: set[Country]  # Das ist ein Set von Country Objekten
+                        registrierungen: set[
+                            Country
+                        ]  # Das ist ein Set von Country Objekten
 
                         # Iteriere durch die Firmen in der Reihenfolge der Kette für bessere Lesbarkeit
                         firmen_in_order = transaction.get_ordered_chain_companies()
-                        data_items = [(f, registration_data.get(f, set())) for f in
-                                      firmen_in_order]  # Stelle sicher, dass alle Firmen berücksichtigt werden
+                        data_items = [
+                            (f, registration_data.get(f, set()))
+                            for f in firmen_in_order
+                        ]  # Stelle sicher, dass alle Firmen berücksichtigt werden
 
                         for firma, registrierungen_set in data_items:
                             # Überspringe Firmen ohne EU-Registrierungsbedarf oder Drittlandsfirmen ohne Bedarf
@@ -489,17 +516,23 @@ def Analyse_1():
                             else:
                                 # Sortiere die Länder für eine konsistente Ausgabe
                                 # Wichtig: Konvertiere das Set in eine Liste zum Sortieren!
-                                sorted_registrations = sorted(list(registrierungen_set), key=lambda c: c.name)
+                                sorted_registrations = sorted(
+                                    list(registrierungen_set), key=lambda c: c.name
+                                )
 
                                 found_registration = False
                                 for country in sorted_registrations:
                                     found_registration = True
                                     if country == firma.country:
                                         # Heimatland ist erforderlich
-                                        st.markdown(f"- {country.name} ({country.code}) - *Heimatland*")
+                                        st.markdown(
+                                            f"- {country.name} ({country.code}) - *Heimatland*"
+                                        )
                                     else:
                                         # Zusätzliche Registrierung erforderlich
-                                        st.markdown(f"- :red[{country.name} ({country.code}) - *Zusätzlich erforderlich*]")
+                                        st.markdown(
+                                            f"- :red[{country.name} ({country.code}) - *Zusätzlich erforderlich*]"
+                                        )
 
                                 # Fallback, falls das Set leer war (sollte durch obige Prüfung abgedeckt sein)
                                 if not found_registration:
@@ -513,9 +546,15 @@ def Analyse_1():
                             if current_index < len(firmen_in_order) - 1:
                                 st.divider()
                 except KeyError as e:
-                     st.error(f"Fehler beim Zugriff auf Registrierungsdaten für Firma: {e}. Möglicherweise fehlt eine Firma im Ergebnis von determine_registration_obligations.", icon="❌")
+                    st.error(
+                        f"Fehler beim Zugriff auf Registrierungsdaten für Firma: {e}. Möglicherweise fehlt eine Firma im Ergebnis von determine_registration_obligations.",
+                        icon="❌",
+                    )
                 except Exception as e:
-                     st.error(f"Fehler bei der Ermittlung der Registrierungspflichten: {e}", icon="🔥")
+                    st.error(
+                        f"Fehler bei der Ermittlung der Registrierungspflichten: {e}",
+                        icon="🔥",
+                    )
         except ValueError as e:
             st.error(f"Fehler bei der Berechnung der Lieferungen: {e}", icon="❌")
             # Setze alle_lieferungen auf None oder leere Liste, um Fehler im nächsten Abschnitt zu vermeiden
