@@ -22,7 +22,7 @@ def get_countries() -> list[Country]:
 class VatTreatmentType(Enum):
     """Definiert mögliche umsatzsteuerliche Behandlungen einer Lieferung."""
 
-    OUT_OF_SCOPE = auto() #
+    OUT_OF_SCOPE = auto()  #
     TAXABLE_NORMAL = auto()  # Steuerpflichtig, Lieferant schuldet USt
     TAXABLE_REVERSE_CHARGE = (
         auto()
@@ -32,9 +32,11 @@ class VatTreatmentType(Enum):
     NOT_TAXABLE = auto()  # Nicht steuerbar (im betrachteten Land)
     UNKNOWN = auto()
 
+
 class IntermediaryStatus(Enum):
     BUYER = auto()
     OCCURING_SUPPLIER = auto()
+
 
 class Handelsstufe:
     """
@@ -66,17 +68,16 @@ class Handelsstufe:
         # Prüfen, ob es ein Zwischenhändler ist (Position > 0 und < max-1)
         is_intermediary = 0 < self.identifier < (self.max_identifier - 1)
         if is_intermediary and self.intermediary_status is not None:
-            status_str = self.get_intermideary_status() # Hole den deutschen String
+            status_str = self.get_intermideary_status()  # Hole den deutschen String
             # Füge den Status in Klammern hinzu, wenn er nicht "Unbekannt" ist
             if status_str != "Unbekannt":
-                 base_repr += f" [Status: {status_str}]"
+                base_repr += f" [Status: {status_str}]"
         # --- ENDE NEU ---
 
         # --- Optional: Abweichende USt-ID hinzufügen ---
         if self.changed_vat and self.new_country:
             base_repr += f" [USt-ID: {self.new_country.code}]"
         # --- ENDE Optional ---
-
 
         return base_repr
 
@@ -299,12 +300,12 @@ class Lieferung:
 
         # --- Moved Supply Logic ---
         if self.is_moved_supply:
-            is_eu_transaction = place.EU and end_country.EU # Grundprüfung EU
+            is_eu_transaction = place.EU and end_country.EU  # Grundprüfung EU
 
             # Prüfung auf Dreiecksgeschäft ---
             is_triangle = False
             # Stelle sicher, dass das Lieferungsobjekt eine Referenz zur Transaktion hat
-            if hasattr(self, 'transaction') and self.transaction:
+            if hasattr(self, "transaction") and self.transaction:
                 try:
                     # Rufe die Prüfmethode der Transaktion auf
                     is_triangle = self.transaction.is_triangular_transaction()
@@ -324,8 +325,12 @@ class Lieferung:
 
             # --- Bestehende Logik für andere Fälle der bewegten Lieferung ---
             # (Nur ausführen, wenn es KEIN Dreiecksgeschäft ist oder nicht EU)
-            elif is_eu_transaction: # Standard EU-Fall (kein Dreieck)
-                if lieferant_country.EU and kunde_country.EU and lieferant_country != kunde_country:
+            elif is_eu_transaction:  # Standard EU-Fall (kein Dreieck)
+                if (
+                    lieferant_country.EU
+                    and kunde_country.EU
+                    and lieferant_country != kunde_country
+                ):
                     # Standard Innergemeinschaftliche Lieferung prüfen
                     # Hier wird angenommen, dass der Kunde eine gültige USt-ID eines anderen EU-Landes verwendet.
                     # Eine detailliertere Prüfung der USt-ID des Kunden könnte hier sinnvoll sein.
@@ -339,19 +344,21 @@ class Lieferung:
                 else:
                     # Fallback für andere EU-Konstellationen (sollte genauer geprüft werden)
                     self.vat_treatment = VatTreatmentType.TAXABLE_NORMAL
-                    self.invoice_note = f"Steuerpflichtig in {place.code} (Prüfung nötig)"
+                    self.invoice_note = (
+                        f"Steuerpflichtig in {place.code} (Prüfung nötig)"
+                    )
 
-            elif place.EU and not end_country.EU: # Export aus EU
+            elif place.EU and not end_country.EU:  # Export aus EU
                 self.vat_treatment = VatTreatmentType.EXEMPT_EXPORT
                 self.invoice_note = "Steuerfreie Ausfuhrlieferung (§ 6 UStG)"
 
-            elif not place.EU: # Lieferung startet außerhalb der EU
-                 self.vat_treatment = VatTreatmentType.OUT_OF_SCOPE
-                 self.invoice_note = f"Nicht steuerbar (außerhalb EU: {place.code})"
+            elif not place.EU:  # Lieferung startet außerhalb der EU
+                self.vat_treatment = VatTreatmentType.OUT_OF_SCOPE
+                self.invoice_note = f"Nicht steuerbar (außerhalb EU: {place.code})"
             # Ggf. weitere Fälle (z.B. Import) hier behandeln
 
         # --- Stationary Supply Logic ---
-        else: # Ruhende Lieferung
+        else:  # Ruhende Lieferung
             if place.EU:
                 # --- Bestehende Logik für ruhende Lieferungen ---
                 # Prüfe auf Reverse Charge Möglichkeit (häufig bei ruhenden Lieferungen)
@@ -360,32 +367,43 @@ class Lieferung:
 
                 # Erneute Prüfung auf Dreieck für spezifischen Hinweis bei RC
                 is_triangle_stationary_check = False
-                if hasattr(self, 'transaction') and self.transaction:
-                    try: is_triangle_stationary_check = self.transaction.is_triangular_transaction()
-                    except: pass # Fehler hier ignorieren
+                if hasattr(self, "transaction") and self.transaction:
+                    try:
+                        is_triangle_stationary_check = (
+                            self.transaction.is_triangular_transaction()
+                        )
+                    except:
+                        pass  # Fehler hier ignorieren
 
                 # Beispielhafte RC-Prüfung (vereinfacht)
                 # Benötigt ggf. eine Methode wie self.kunde.is_registered_in(place) in Handelsstufe
-                if (lieferant_country != place and kunde_country == place) or \
-                   (lieferant_country != place and hasattr(self.kunde, 'is_registered_in') and self.kunde.is_registered_in(place)):
+                if (lieferant_country != place and kunde_country == place) or (
+                    lieferant_country != place
+                    and hasattr(self.kunde, "is_registered_in")
+                    and self.kunde.is_registered_in(place)
+                ):
                     self.vat_treatment = VatTreatmentType.TAXABLE_REVERSE_CHARGE
                     # Spezifischer Hinweis für die zweite Lieferung im Dreiecksgeschäft
-                    if is_triangle_stationary_check and self.kunde == self.transaction.end_company:
-                         self.invoice_note = f"Reverse Charge (Dreiecksgeschäft, Steuerschuldner: Kunde in {place.code})"
+                    if (
+                        is_triangle_stationary_check
+                        and self.kunde == self.transaction.end_company
+                    ):
+                        self.invoice_note = f"Reverse Charge (Dreiecksgeschäft, Steuerschuldner: Kunde in {place.code})"
                     else:
-                         self.invoice_note = f"Reverse Charge (Steuerschuldner: Kunde in {place.code})"
+                        self.invoice_note = (
+                            f"Reverse Charge (Steuerschuldner: Kunde in {place.code})"
+                        )
                 else:
                     # Standardfall: Steuerpflichtig im Lieferort
                     self.vat_treatment = VatTreatmentType.TAXABLE_NORMAL
                     self.invoice_note = f"Steuerpflichtig in {place.code}"
-            else: # Ort der ruhenden Lieferung ist außerhalb der EU
+            else:  # Ort der ruhenden Lieferung ist außerhalb der EU
                 self.vat_treatment = VatTreatmentType.OUT_OF_SCOPE
                 self.invoice_note = f"Nicht steuerbar (außerhalb EU: {place.code})"
 
         # Fallback, falls keine Behandlung ermittelt wurde
         if self.vat_treatment == VatTreatmentType.UNKNOWN:
-             self.invoice_note = "Steuerbehandlung konnte nicht ermittelt werden."
-
+            self.invoice_note = "Steuerbehandlung konnte nicht ermittelt werden."
 
 
 class Transaktion:
@@ -479,9 +497,9 @@ class Transaktion:
         # Stelle sicher, dass der Transporteur bekannt ist
         shipping_company = self.find_shipping_company()
         if shipping_company is None:
-             # Wenn kein Transporteur definiert ist, kann es kein Dreiecksgeschäft sein
-             # (oder die Analyse ist unvollständig)
-             return False
+            # Wenn kein Transporteur definiert ist, kann es kein Dreiecksgeschäft sein
+            # (oder die Analyse ist unvollständig)
+            return False
         # 6. Wird der Transport von C (letzter Abnehmer) veranlasst?
         if shipping_company == c:
             # Wenn C transportiert -> KEIN vereinfachtes Dreiecksgeschäft
@@ -623,7 +641,7 @@ class Transaktion:
         """
         self.lieferungen = []
         bewegte_lieferung_gefunden = False
-        bewegte_lieferung_obj: Lieferung | None = None # Type hint angepasst
+        bewegte_lieferung_obj: Lieferung | None = None  # Type hint angepasst
 
         # 1. Transporteur finden
         shipping_company = self.find_shipping_company()
@@ -648,8 +666,8 @@ class Transaktion:
             self.lieferungen.append(Lieferung(lieferant, kunde))
 
         # 4. Bewegte Lieferung zuordnen (§ 3 Abs. 6a UStG)
-        if not self.lieferungen: # Sicherstellen, dass Lieferungen existieren
-             raise ValueError("Keine Lieferungen in der Transaktion vorhanden.")
+        if not self.lieferungen:  # Sicherstellen, dass Lieferungen existieren
+            raise ValueError("Keine Lieferungen in der Transaktion vorhanden.")
 
         if shipping_company == self.start_company:
             # Fall 1: Erster Lieferant transportiert -> Lieferung 1 ist bewegt
@@ -657,7 +675,7 @@ class Transaktion:
             bewegte_lieferung_obj = self.lieferungen[0]
             bewegte_lieferung_gefunden = True
         elif shipping_company == self.end_company:
-             # Fall 2: Letzter Abnehmer transportiert -> Letzte Lieferung ist bewegt
+            # Fall 2: Letzter Abnehmer transportiert -> Letzte Lieferung ist bewegt
             self.lieferungen[-1].is_moved_supply = True
             bewegte_lieferung_obj = self.lieferungen[-1]
             bewegte_lieferung_gefunden = True
@@ -672,29 +690,40 @@ class Transaktion:
             )
 
             # Priorität: Explizit gesetzter Status des Zwischenhändlers
-            if shipping_company.intermediary_status == IntermediaryStatus.OCCURING_SUPPLIER:
+            if (
+                shipping_company.intermediary_status
+                == IntermediaryStatus.OCCURING_SUPPLIER
+            ):
                 # Status "Auftretender Lieferer": Lieferung AN den ZH ist bewegt (§ 3 Abs. 6a S. 4 Alt. 2 UStG)
                 if lieferung_an_zh:
                     lieferung_an_zh.is_moved_supply = True
                     bewegte_lieferung_obj = lieferung_an_zh
                     bewegte_lieferung_gefunden = True
                 else:
-                     # Sollte nicht passieren, wenn die Kette korrekt ist
-                     raise ValueError(f"Konnte Lieferung an transportierenden Zwischenhändler {shipping_company} nicht finden.")
+                    # Sollte nicht passieren, wenn die Kette korrekt ist
+                    raise ValueError(
+                        f"Konnte Lieferung an transportierenden Zwischenhändler {shipping_company} nicht finden."
+                    )
 
             elif shipping_company.intermediary_status == IntermediaryStatus.BUYER:
-                 # Status "Erwerber": Lieferung VOM ZH ist bewegt (§ 3 Abs. 6a S. 4 Alt. 1 UStG)
-                 if lieferung_vom_zh:
-                     lieferung_vom_zh.is_moved_supply = True
-                     bewegte_lieferung_obj = lieferung_vom_zh
-                     bewegte_lieferung_gefunden = True
-                 else:
-                     # Sollte nicht passieren
-                     raise ValueError(f"Konnte Lieferung vom transportierenden Zwischenhändler {shipping_company} nicht finden.")
+                # Status "Erwerber": Lieferung VOM ZH ist bewegt (§ 3 Abs. 6a S. 4 Alt. 1 UStG)
+                if lieferung_vom_zh:
+                    lieferung_vom_zh.is_moved_supply = True
+                    bewegte_lieferung_obj = lieferung_vom_zh
+                    bewegte_lieferung_gefunden = True
+                else:
+                    # Sollte nicht passieren
+                    raise ValueError(
+                        f"Konnte Lieferung vom transportierenden Zwischenhändler {shipping_company} nicht finden."
+                    )
 
             else:  # Priorität 2: Status "Nicht festgelegt" (None) -> Prüfung der USt-ID (§ 3 Abs. 6a S. 4 UStG)
                 # Prüfe, ob der Zwischenhändler die USt-ID des Abgangslandes verwendet
-                if (shipping_company.changed_vat  and shipping_company.new_country and shipping_company.new_country.code == start_country.code):
+                if (
+                    shipping_company.changed_vat
+                    and shipping_company.new_country
+                    and shipping_company.new_country.code == start_country.code
+                ):
                     # Fall: ZH verwendet USt-ID des Abgangslandes -> Lieferung AN ZH ist bewegt (wie "Auftretender Lieferer")
                     if lieferung_an_zh:
                         lieferung_an_zh.is_moved_supply = True
@@ -702,7 +731,8 @@ class Transaktion:
                         bewegte_lieferung_gefunden = True
                     else:
                         raise ValueError(
-                            f"Konnte Lieferung an transportierenden Zwischenhändler {shipping_company} (mit USt-ID von {start_country.code}) nicht finden.")
+                            f"Konnte Lieferung an transportierenden Zwischenhändler {shipping_company} (mit USt-ID von {start_country.code}) nicht finden."
+                        )
                 else:
                     # Fall: ZH verwendet eigene USt-ID oder die eines anderen Landes (NICHT Abgangsland)
                     # -> Regelvermutung: Lieferung VOM ZH ist bewegt (wie "Erwerber")
@@ -711,8 +741,9 @@ class Transaktion:
                         bewegte_lieferung_obj = lieferung_vom_zh
                         bewegte_lieferung_gefunden = True
                     else:
-                        raise ValueError(f"Konnte Lieferung vom transportierenden Zwischenhändler {shipping_company} nicht finden.")
-
+                        raise ValueError(
+                            f"Konnte Lieferung vom transportierenden Zwischenhändler {shipping_company} nicht finden."
+                        )
 
         if not bewegte_lieferung_gefunden or bewegte_lieferung_obj is None:
             # Dieser Fehler sollte durch die obigen Prüfungen eigentlich nicht mehr auftreten
