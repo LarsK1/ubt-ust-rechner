@@ -716,6 +716,7 @@ def Analyse_1():
                             current_index = firmen_in_order.index(firma)
                             if current_index < len(firmen_in_order) - 1:
                                 st.divider()
+
                 except KeyError as e:
                     st.error(
                         f"Fehler beim Zugriff auf Registrierungsdaten für Firma: {e}. Möglicherweise fehlt eine Firma im Ergebnis von determine_registration_obligations.",
@@ -725,6 +726,55 @@ def Analyse_1():
                     st.error(
                         f"Fehler bei der Ermittlung der Registrierungspflichten: {e}",
                         icon="🔥",
+                    )
+            if alle_lieferungen:
+                try:
+                    reporting_data = transaction.determine_reporting_obligations()
+                    # Prüfen, ob überhaupt Meldepflichten gefunden wurden
+                    has_reporting_needs = any(reporting_data.values())
+
+                    if has_reporting_needs:
+                        with st.expander(
+                            "Mögliche Meldepflichten (EU - ohne Schwellenwerte)",
+                            icon="📊",
+                            expanded=False,  # Standardmäßig geschlossen
+                        ):
+                            st.markdown("#### Potenzielle Meldungen pro Firma")
+                            st.caption(
+                                "Zeigt mögliche Intrastat- und ZM-Pflichten an. "
+                                "Nationale Schwellenwerte und Sonderregeln sind nicht berücksichtigt!"
+                            )
+
+                            firmen_in_order = transaction.get_ordered_chain_companies()
+                            data_items = [
+                                (f, reporting_data.get(f, set()))
+                                for f in firmen_in_order
+                            ]
+
+                            for firma, meldungen_set in data_items:
+                                # Nur Firmen anzeigen, die Meldepflichten haben
+                                if meldungen_set:
+                                    st.markdown(f"**{firma}**")  # Nutzt __repr__
+
+                                    sorted_meldungen = sorted(list(meldungen_set))
+                                    for meldung in sorted_meldungen:
+                                        st.markdown(f"- {meldung}")
+
+                                    current_index = firmen_in_order.index(firma)
+                                    if current_index < len(firmen_in_order) - 1:
+                                        # Trennlinie nur, wenn noch eine Firma mit Meldungen folgt
+                                        next_firma_has_needs = any(
+                                            reporting_data.get(f, set())
+                                            for f in firmen_in_order[
+                                                current_index + 1 :
+                                            ]
+                                        )
+                                        if next_firma_has_needs:
+                                            st.divider()
+
+                except Exception as e:
+                    st.error(
+                        f"Fehler bei Ermittlung der Meldepflichten: {e}", icon="🔥"
                     )
         except ValueError as e:
             st.error(f"Fehler bei der Berechnung der Lieferungen: {e}", icon="❌")

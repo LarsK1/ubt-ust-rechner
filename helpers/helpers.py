@@ -195,6 +195,11 @@ class Lieferung:
         self.vat_treatment: VatTreatmentType = VatTreatmentType.UNKNOWN
         self.invoice_note: [str] = None  # Hinweis für die Rechnung
 
+        # Flags für Meldepflichten
+        self.potential_intrastat_dispatch: bool = False  # Intrastat Versendung
+        self.potential_intrastat_arrival: bool = False  # Intrastat Eingang
+        self.potential_ecsl_report: bool = False  # ZM (Zusammenfassende Meldung)
+
     def get_vat_treatment_display(self) -> str:
         """Gibt eine benutzerfreundliche Zeichenkette für die Steuerbehandlung zurück."""
         treatment = self.vat_treatment
@@ -223,25 +228,21 @@ class Lieferung:
 
     def __repr__(self):
         """Erzeugt eine kompakte und lesbare Darstellung der Lieferung."""
-        # Kurze Darstellung für Lieferant und Kunde
-        lieferant_repr = (
-            f"{self.lieferant.get_role_name()} ({self.lieferant.country.code})"
+        meldungen = []
+        if self.potential_intrastat_dispatch:
+            meldungen.append("Intra-D")
+        if self.potential_intrastat_arrival:
+            meldungen.append("Intra-A")
+        if self.potential_ecsl_report:
+            meldungen.append("ZM")
+        meldungen_str = f" ({', '.join(meldungen)})" if meldungen else ""
+        moved_str = "Bewegt" if self.is_moved_supply else "Ruhend"
+        place_str = self.place_of_supply.code if self.place_of_supply else "?"
+        vat_str = self.vat_treatment.name
+        return (
+            f"Lieferung({self.lieferant} -> {self.kunde}, {moved_str}, "
+            f"Ort: {place_str}, Ust: {vat_str}{meldungen_str})"
         )
-        kunde_repr = f"{self.kunde.get_role_name()} ({self.kunde.country.code})"
-
-        # Status (Bewegt/Ruhend)
-        status_repr = "Bewegt" if self.is_moved_supply else "Ruhend"
-
-        # Ort (nur Ländercode)
-        ort_repr = (
-            f"Ort: {self.place_of_supply.code}" if self.place_of_supply else "Ort: ?"
-        )
-
-        # Kurze Steuerbehandlung
-        vat_repr = self.get_vat_treatment_display()
-
-        # Zusammenfügen mit Trennzeichen für Lesbarkeit
-        return f"{lieferant_repr} -> {kunde_repr} | {status_repr} | {ort_repr} | {vat_repr}"
 
     def determine_place_of_supply(
         self, bewegte_lieferung, start_country: Country, end_country: Country
@@ -288,6 +289,10 @@ class Lieferung:
 
     def determine_vat_treatment(self, start_country: Country, end_country: Country):
         """Determines the VAT treatment based on supply type, place, and countries involved."""
+
+        self.potential_intrastat_dispatch = False
+        self.potential_intrastat_arrival = False
+        self.potential_ecsl_report = False
 
         place = self.place_of_supply
         if place is None:
@@ -448,6 +453,21 @@ class Lieferung:
         # Fallback, falls keine Behandlung ermittelt wurde
         if self.vat_treatment == VatTreatmentType.UNKNOWN:
             self.invoice_note = "Steuerbehandlung konnte nicht ermittelt werden."
+
+        elif self.vat_treatment == VatTreatmentType.EXEMPT_IC_SUPPLY:
+            # ZM ist immer für den Lieferanten relevant bei steuerfreier IG Lieferung
+            self.potential_ecsl_report = True
+
+            # Intrastat ist an die *bewegte* IG Lieferung gekoppelt
+            if self.is_moved_supply:
+                # Lieferant meldet Versendung aus dem Abgangsland (place)
+                self.potential_intrastat_dispatch = True
+                # Kunde meldet Eingang im Bestimmungsland (end_country)
+                self.potential_intrastat_arrival = True
+        # Hinweis: Bei Dreiecksgeschäften gelten ggf. Sonderregeln für ZM/Intrastat,
+        # die hier vereinfacht dargestellt werden. Die ZM muss z.B. besonders gekennzeichnet werden.
+        # Intrastat wird oft nur vom ersten Abnehmer (B) und letzten Empfänger (C) gemeldet.
+        # Für eine Basis-Anzeige behalten wir die obige Logik bei
 
 
 class Transaktion:
@@ -680,6 +700,45 @@ class Transaktion:
                 registration_needs[firma].add(firma.new_country)
 
         return registration_needs
+
+    def determine_reporting_obligations(self) -> dict[Handelsstufe, set[str]]:
+        """
+        Ermittelt potenzielle EU-Meldepflichten (Intrastat, ZM) für jede Firma.
+        Beachtet Schwellenwerte und nationale Besonderheiten NICHT.
+
+        Returns:
+            dict[Handelsstufe, set[str]]: Dictionary mit Firmen als Keys
+                                           und einem Set von Meldungs-Strings als Values.
+                                           z.B. {"Intrastat Versendung", "Intrastat Eingang", "ZM"}
+        """
+        reporting_needs = {firma: set() for firma in self.get_ordered_chain_companies()}
+
+        if not self.lieferungen:
+            # Stelle sicher, dass Lieferungen berechnet wurden (sollte vorher passiert sein)
+            return reporting_needs
+
+        is_triangle = self.is_triangular_transaction()
+
+        for lief in self.lieferungen:
+            lieferant = lief.lieferant
+            kunde = lief.kunde
+
+            # ZM (EC Sales List)
+            if lief.potential_ecsl_report:
+                note = "ZM (Dreieck)" if is_triangle else "ZM"
+                reporting_needs[lieferant].add(note)
+
+            # Intrastat Versendung (Dispatch)
+            if lief.potential_intrastat_dispatch:
+                # Im Dreieck meldet oft nur B die Versendung (vereinfacht: Lieferant der bewegten Lief.)
+                reporting_needs[lieferant].add("Intrastat Versendung")
+
+            # Intrastat Eingang (Arrival)
+            if lief.potential_intrastat_arrival:
+                # Im Dreieck meldet C den Eingang (vereinfacht: Kunde der bewegten Lief.)
+                reporting_needs[kunde].add("Intrastat Eingang")
+
+        return reporting_needs
 
     def calculate_delivery_and_vat(self) -> list[Lieferung]:  # Umbenannt für Klarheit
         """
