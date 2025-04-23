@@ -238,10 +238,10 @@ class Lieferung:
         meldungen_str = f" ({', '.join(meldungen)})" if meldungen else ""
         moved_str = "Bewegt" if self.is_moved_supply else "Ruhend"
         place_str = self.place_of_supply.code if self.place_of_supply else "?"
-        vat_str = self.vat_treatment.name
+        vat_str = self.get_vat_treatment_display()
         return (
             f"Lieferung({self.lieferant} -> {self.kunde}, {moved_str}, "
-            f"Ort: {place_str}, Ust: {vat_str}{meldungen_str})"
+            f"Ort: {place_str}, USt: {vat_str}{meldungen_str})"
         )
 
     def determine_place_of_supply(

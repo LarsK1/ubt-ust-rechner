@@ -1008,21 +1008,21 @@ TEST_SCENARIOS_FOUR_COMPANIES = [
                 "place": "DE",
                 "vat": VatTreatmentType.EXEMPT_IC_SUPPLY,
             },
-            # B -> C: Ruhend, Ort FR,
+            # B -> C: Ruhend, Ort FR, RC (AT->PL in FR)
             {
                 "from": 1,
                 "to": 2,
                 "moved": False,
                 "place": "FR",
-                "vat": VatTreatmentType.TAXABLE_NORMAL,
+                "vat": VatTreatmentType.TAXABLE_REVERSE_CHARGE,  # Korrigiert: RC erwartet
             },
-            # C -> D: Ruhend, Ort FR,
+            # C -> D: Ruhend, Ort FR, RC (PL->FR in FR)
             {
                 "from": 2,
                 "to": 3,
                 "moved": False,
                 "place": "FR",
-                "vat": VatTreatmentType.TAXABLE_NORMAL,
+                "vat": VatTreatmentType.TAXABLE_REVERSE_CHARGE,  # Korrigiert: RC erwartet
             },
         ],
         "expected_triangle": False,
@@ -1031,6 +1031,13 @@ TEST_SCENARIOS_FOUR_COMPANIES = [
             1: {"AT", "FR"},  # B: AT (home, IG Erw), FR (RC Lief B->C)
             2: {"PL", "FR"},  # C: PL (home, IG Erw), FR (RC Lief C->D)
             3: {"FR"},  # D: FR (home, IG Erw)
+        },
+        # NEU:
+        "expected_reporting": {
+            0: {"ZM", "Intrastat Versendung"},  # A: ZM für IG Lief, Intra-V
+            1: {"Intrastat Eingang"},  # B: Intra-E für bewegte Lief.
+            2: set(),
+            3: set(),
         },
     },
     # --- Szenario 2: DE -> AT -> PL -> FR, D transportiert ---
@@ -1107,6 +1114,13 @@ TEST_SCENARIOS_FOUR_COMPANIES = [
             2: {"PL", "DE"},  # C: PL (home), DE (IG Lief C->D)
             3: {"FR"},  # D: FR (home, IG Erw)
         },
+        # NEU:
+        "expected_reporting": {
+            0: set(),
+            1: set(),
+            2: {"ZM", "Intrastat Versendung"},  # C: ZM für IG Lief, Intra-V
+            3: {"Intrastat Eingang"},  # D: Intra-E
+        },
     },
     # --- Szenario 3: DE -> AT -> PL -> FR, B transportiert als Abnehmer ---
     {
@@ -1164,7 +1178,7 @@ TEST_SCENARIOS_FOUR_COMPANIES = [
                 "to": 2,
                 "moved": False,
                 "place": "FR",
-                "vat": VatTreatmentType.TAXABLE_NORMAL,
+                "vat": VatTreatmentType.TAXABLE_REVERSE_CHARGE,  # Korrigiert: RC erwartet
             },
             # C -> D: Ruhend, Ort FR, RC (PL->FR in FR)
             {
@@ -1172,15 +1186,22 @@ TEST_SCENARIOS_FOUR_COMPANIES = [
                 "to": 3,
                 "moved": False,
                 "place": "FR",
-                "vat": VatTreatmentType.TAXABLE_NORMAL,
+                "vat": VatTreatmentType.TAXABLE_REVERSE_CHARGE,  # Korrigiert: RC erwartet
             },
         ],
-        "expected_triangle": False,  # Könnte als Dreieck A-B-C interpretiert werden, aber hier Standardlogik
+        "expected_triangle": False,
         "expected_registrations": {
             0: {"DE"},  # A: DE (IG Lief)
             1: {"AT", "FR"},  # B: AT (home, IG Erw), FR (RC Lief B->C)
             2: {"PL", "FR"},  # C: PL (home, IG Erw), FR (RC Lief C->D)
             3: {"FR"},  # D: FR (home, IG Erw)
+        },
+        # NEU:
+        "expected_reporting": {
+            0: {"ZM", "Intrastat Versendung"},  # A: ZM für IG Lief, Intra-V
+            1: {"Intrastat Eingang"},  # B: Intra-E
+            2: set(),
+            3: set(),
         },
     },
     # --- Szenario 4: DE -> AT -> PL -> FR, B transportiert als Lieferer ---
@@ -1233,7 +1254,7 @@ TEST_SCENARIOS_FOUR_COMPANIES = [
                 "place": "DE",
                 "vat": VatTreatmentType.TAXABLE_NORMAL,
             },
-            # B -> C: Bewegt, Ort DE, Steuerfrei IG (DE->FR)
+            # B -> C: Bewegt, Ort DE, Steuerfrei IG (DE->PL) - Ziel ist C(PL)
             {
                 "from": 1,
                 "to": 2,
@@ -1256,6 +1277,13 @@ TEST_SCENARIOS_FOUR_COMPANIES = [
             1: {"AT", "DE"},  # B: AT (home), DE (IG Lief B->C)
             2: {"PL", "FR"},  # C: PL (home, IG Erw), FR (RC Lief C->D)
             3: {"FR"},  # D: FR (home, IG Erw)
+        },
+        # NEU:
+        "expected_reporting": {
+            0: set(),
+            1: {"ZM", "Intrastat Versendung"},  # B: ZM für IG Lief, Intra-V
+            2: {"Intrastat Eingang"},  # C: Intra-E
+            3: set(),
         },
     },
     # --- Szenario 5: DE -> AT -> PL -> FR, C transportiert als Abnehmer ---
@@ -1332,6 +1360,13 @@ TEST_SCENARIOS_FOUR_COMPANIES = [
             2: {"PL", "FR"},  # C: PL (home, IG Erw), FR (RC Lief C->D)
             3: {"FR"},  # D: FR (home, IG Erw)
         },
+        # NEU:
+        "expected_reporting": {
+            0: set(),
+            1: {"ZM", "Intrastat Versendung"},  # B: ZM für IG Lief, Intra-V
+            2: {"Intrastat Eingang"},  # C: Intra-E
+            3: set(),
+        },
     },
     # --- Szenario 6: DE -> AT -> PL -> FR, C transportiert als Lieferer ---
     {
@@ -1406,6 +1441,13 @@ TEST_SCENARIOS_FOUR_COMPANIES = [
             1: {"AT", "DE"},  # B: AT (home), DE (Lief B->C)
             2: {"PL", "DE"},  # C: PL (home), DE (IG Lief C->D)
             3: {"FR"},  # D: FR (home, IG Erw)
+        },
+        # NEU:
+        "expected_reporting": {
+            0: set(),
+            1: set(),
+            2: {"ZM", "Intrastat Versendung"},  # C: ZM für IG Lief, Intra-V
+            3: {"Intrastat Eingang"},  # D: Intra-E
         },
     },
     # --- Szenario 7: DE -> AT -> PL -> CN, A transportiert & Export ---
@@ -1482,6 +1524,13 @@ TEST_SCENARIOS_FOUR_COMPANIES = [
             2: {"PL"},  # C: PL (home)
             3: set(),  # D: CN
         },
+        # NEU:
+        "expected_reporting": {  # Export löst keine EU-Meldungen aus
+            0: set(),
+            1: set(),
+            2: set(),
+            3: set(),
+        },
     },
     # --- Szenario 8: DE -> AT -> PL -> CN, C transportiert als Abnehmer & Export ---
     {
@@ -1557,6 +1606,13 @@ TEST_SCENARIOS_FOUR_COMPANIES = [
             2: {"PL"},  # C: PL (home)
             3: set(),  # D: CN
         },
+        # NEU:
+        "expected_reporting": {  # Export löst keine EU-Meldungen aus
+            0: set(),
+            1: set(),
+            2: set(),
+            3: set(),
+        },
     },
     # --- Szenario 9: CN -> DE -> AT -> PL, A transportiert & EUSt (§3(8)) ---
     {
@@ -1605,7 +1661,7 @@ TEST_SCENARIOS_FOUR_COMPANIES = [
                 "from": 0,
                 "to": 1,
                 "moved": True,
-                "place": "PL",
+                "place": "DE",  # Korrigiert: Ort wird DE
                 "vat": VatTreatmentType.TAXABLE_NORMAL,
             },
             # B -> C: Ruhend, Ort PL, RC (DE->AT in PL)
@@ -1614,7 +1670,7 @@ TEST_SCENARIOS_FOUR_COMPANIES = [
                 "to": 2,
                 "moved": False,
                 "place": "PL",
-                "vat": VatTreatmentType.TAXABLE_NORMAL,
+                "vat": VatTreatmentType.TAXABLE_REVERSE_CHARGE,  # Korrigiert: RC erwartet
             },
             # C -> D: Ruhend, Ort PL, Steuerpflichtig PL (AT->PL in PL)
             {
@@ -1631,6 +1687,13 @@ TEST_SCENARIOS_FOUR_COMPANIES = [
             1: {"DE", "PL"},  # B: DE (home), PL (RC Lief B->C)
             2: {"AT", "PL"},  # C: AT (home, IG Erw), PL (Lief C->D)
             3: {"PL"},  # D: PL (home, IG Erw)
+        },
+        # NEU:
+        "expected_reporting": {  # Import und RC lösen keine EU-Meldungen aus
+            0: set(),
+            1: set(),
+            2: set(),
+            3: set(),
         },
     },
     # --- Szenario 10: CN -> DE -> AT -> PL, C transportiert als Abnehmer, A zahlt EUSt ---
@@ -1706,6 +1769,13 @@ TEST_SCENARIOS_FOUR_COMPANIES = [
             1: {"DE"},  # B: DE (home, IG Lief B->C)
             2: {"AT", "PL"},  # C: AT (home, IG Erw), PL (RC Lief C->D)
             3: {"PL"},  # D: PL (home, IG Erw)
+        },
+        # NEU:
+        "expected_reporting": {
+            0: set(),
+            1: {"ZM", "Intrastat Versendung"},  # B: ZM für IG Lief, Intra-V
+            2: {"Intrastat Eingang"},  # C: Intra-E
+            3: set(),
         },
     },
 ]
@@ -1893,6 +1963,19 @@ TEST_SCENARIOS_TEN_COMPANIES = [
             8: {"LU"},  # I: LU (home, IG Erw), IE (RC Lief)
             9: {"IE"},  # J: IE (home, IG Erw)
         },
+        # NEU:
+        "expected_reporting": {
+            0: {"ZM", "Intrastat Versendung"},  # A: ZM für IG Lief, Intra-V
+            1: {"Intrastat Eingang"},  # B: Intra-E
+            2: set(),
+            3: set(),
+            4: set(),
+            5: set(),
+            6: set(),
+            7: set(),
+            8: set(),
+            9: set(),
+        },
     },
     # --- Szenario 2: Gemischt EU/Drittland, Mittlerer transportiert als Abnehmer, Export ---
     # DE -> AT -> CH -> PL -> FR -> US -> IT -> ES -> BE -> CN
@@ -2077,6 +2160,19 @@ TEST_SCENARIOS_TEN_COMPANIES = [
             8: {"BE"},  # I: BE (home)
             9: set(),  # J: CN (none EU)
         },
+        # NEU:
+        "expected_reporting": {  # Export löst keine EU-Meldungen aus
+            0: set(),
+            1: set(),
+            2: set(),
+            3: set(),
+            4: set(),
+            5: set(),
+            6: set(),
+            7: set(),
+            8: set(),
+            9: set(),
+        },
     },
     # --- Szenario 3: Gemischt EU/Drittland, A transportiert, Import mit §3(8) ---
     # CN -> DE -> AT -> PL -> FR -> IT -> ES -> BE -> NL -> LU
@@ -2260,6 +2356,19 @@ TEST_SCENARIOS_TEN_COMPANIES = [
             7: {"BE", "LU"},  # H: BE (home, IG Erw), LU (RC Lief)
             8: {"NL", "LU"},  # I: NL (home, IG Erw), LU (Lief)
             9: {"LU"},  # J: LU (home, IG Erw)
+        },
+        # NEU:
+        "expected_reporting": {  # Import und RC lösen keine EU-Meldungen aus
+            0: set(),
+            1: set(),
+            2: set(),
+            3: set(),
+            4: set(),
+            5: set(),
+            6: set(),
+            7: set(),
+            8: set(),
+            9: set(),
         },
     },
 ]
