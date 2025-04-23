@@ -106,6 +106,27 @@ def Eingabe_1():
                 if i < anzahl_firmen - 1:
                     firma.add_next_company_to_chain(firma, laender_firmen[i + 1])
 
+            export_relevant = False
+            import_relevant = False
+            if len(laender_firmen) >= 2:  # Nur prüfen, wenn mind. 2 Firmen da sind
+                for i in range(len(laender_firmen) - 1):
+                    lieferant_firma = laender_firmen[i]
+                    kunde_firma = laender_firmen[i + 1]
+
+                    # Prüfe auf Export (EU -> Nicht-EU)
+                    if lieferant_firma.country.EU and not kunde_firma.country.EU:
+                        export_relevant = True
+                        # Optional: Hier könnte man auch prüfen, ob der Transport über diese Grenze geht,
+                        # aber für die reine Anzeige des Zoll-Abschnitts reicht die Länderkombi.
+
+                    # Prüfe auf Import (Nicht-EU -> EU)
+                    if not lieferant_firma.country.EU and kunde_firma.country.EU:
+                        import_relevant = True
+
+                    # Wenn beides gefunden, kann die Schleife abbrechen (optional)
+                    if export_relevant and import_relevant:
+                        break
+
             # --- NEU: Prüfung auf mindestens ein EU-Land ---
             at_least_one_eu = any(f.country.EU for f in laender_firmen)
             if not at_least_one_eu and anzahl_firmen > 0:
@@ -186,33 +207,24 @@ def Eingabe_1():
             st.error("Ein Handelsgeschäft benötigt mindestens zwei beteiligte Firmen.")
             schritt = 0
 
-    # --- Lieferung / Zollabwicklung (Schritte 4, 5, NEU 5b) ---
-    # Nur anzeigen, wenn Schritt 1 abgeschlossen und Bedingungen erfüllt
+    # --- Lieferung / Zollabwicklung (Schritte 4, 5, 5b) ---
     if schritt == 1 and show_next_steps:
-        endanalyse_benötigte_daten = False  # Reset für diesen Abschnitt
-        with st.expander(
-            "Lieferung / Zollabwicklung", expanded=True
-        ):  # Standardmäßig geöffnet
+        endanalyse_benötigte_daten = False
+        with st.expander("Lieferung / Zollabwicklung", expanded=True):
             st.subheader("Schritt 4: Lieferung")
 
-            # Verwende Index im Session State für Transporteur
             transport_options = ["keine Auswahl"] + laender_firmen
             default_transport_index = st.session_state.get("transport_firma_index", 0)
             selected_transport_index = st.selectbox(
                 "Welche Firma transportiert die Ware / veranlasst den Transport?",
-                range(len(transport_options)),  # Arbeite mit Indizes
+                range(len(transport_options)),
                 index=default_transport_index,
-                format_func=lambda idx: str(
-                    transport_options[idx]
-                ),  # Zeige Firmennamen an
+                format_func=lambda idx: str(transport_options[idx]),
                 key="transport_select",
             )
-            st.session_state["transport_firma_index"] = (
-                selected_transport_index  # Index speichern
-            )
+            st.session_state["transport_firma_index"] = selected_transport_index
             transport_firma = transport_options[selected_transport_index]
 
-            # Setze responsible_for_shippment basierend auf Auswahl
             is_transport_selected = False
             if isinstance(transport_firma, Handelsstufe):
                 is_transport_selected = True
@@ -222,13 +234,15 @@ def Eingabe_1():
                     )
                 st.success(f"Transport durch: **{transport_firma}**", icon="🚚")
             else:
-                # Reset für alle, wenn "keine Auswahl"
                 for firma in laender_firmen:
                     firma.responsible_for_shippment = False
 
-            # Status des Zwischenhändlers (wenn ZH transportiert)
             is_intermediary_status_set = False
-            if is_transport_selected and "Z" in transport_firma.get_role_name():
+            is_intermediary_relevant = (
+                is_transport_selected and "Z" in transport_firma.get_role_name()
+            )
+
+            if is_intermediary_relevant:
                 st.info(
                     f"Da der {transport_firma.get_role_name(True)} transportiert, ist sein Status relevant.",
                     icon="ℹ️",
@@ -251,37 +265,41 @@ def Eingabe_1():
                     selected_intermediary_index
                 ]
 
-                # Setze Status im Objekt
                 status_to_set = None
                 if intermediar_status_str == "Abnehmer":
                     status_to_set = IntermediaryStatus.BUYER
                     is_intermediary_status_set = True
                 elif intermediar_status_str == "Lieferer":
-                    status_to_set = IntermediaryStatus.SUPPLIER
+                    status_to_set = (
+                        IntermediaryStatus.SUPPLIER
+                    )  # Oder OCCURING_SUPPLIER
                     is_intermediary_status_set = True
+                # Wenn "keine Auswahl", bleibt is_intermediary_status_set = False
 
-                # Finde die transportierende Firma erneut und setze Status
                 for firma in laender_firmen:
                     if firma.identifier == transport_firma.identifier:
                         firma.intermediary_status = status_to_set
                         break
             else:
-                # Wenn kein ZH transportiert oder keine Auswahl, Status für alle resetten
+                # Wenn kein ZH transportiert, ist der Status nicht relevant -> Bedingung erfüllt
+                is_intermediary_status_set = True
+                # Status für alle resetten (falls vorher mal einer gesetzt war)
                 for firma in laender_firmen:
                     firma.intermediary_status = None
-                # Wenn ZH transportiert, aber Status "keine Auswahl", ist Bedingung nicht erfüllt
-                is_intermediary_status_set = not (
-                    is_transport_selected and "Z" in transport_firma.get_role_name()
-                )
 
-            # --- Zollabwicklung (Schritt 5 & NEU 5b) ---
-            customs_necessary = not all(f.country.EU for f in laender_firmen)
-            is_customs_export_set = True  # Standardmäßig True, wenn nicht notwendig
-            is_customs_import_vat_set = True  # Standardmäßig True, wenn nicht notwendig
+            # --- Zollabwicklung (Schritt 5 & 5b) ---
+            # Standardmäßig True, wenn nicht relevant, sonst False bis Auswahl
+            is_customs_export_set = not export_relevant
+            is_customs_import_vat_set = not import_relevant
 
-            if customs_necessary:
+            # --- Schritt 5: Export-Zoll ---
+            if export_relevant:
                 st.divider()
                 st.subheader("Schritt 5: Zollabwicklung (Export)")
+                st.info(
+                    "Da die Lieferung von der EU in ein Drittland geht, ist die Export-Zollabwicklung relevant.",
+                    icon="🛂",
+                )
                 customs_export_options = ["keine Auswahl"] + laender_firmen
                 default_export_index = st.session_state.get("customs_export_index", 0)
                 selected_export_index = st.selectbox(
@@ -294,25 +312,26 @@ def Eingabe_1():
                 st.session_state["customs_export_index"] = selected_export_index
                 customs_export_firma = customs_export_options[selected_export_index]
 
-                # Setze responsible_for_customs
-                is_customs_export_set = False
                 if isinstance(customs_export_firma, Handelsstufe):
-                    is_customs_export_set = True
+                    is_customs_export_set = True  # Jetzt auf True setzen
                     for firma in laender_firmen:
                         firma.responsible_for_customs = (
                             firma.identifier == customs_export_firma.identifier
                         )
                     st.success(
-                        f"Export-Zoll durch: **{customs_export_firma}**", icon="🛂"
-                    )
+                        f"Export-Zoll durch: **{customs_export_firma}**", icon="👍"
+                    )  # Icon geändert
                 else:
+                    # is_customs_export_set bleibt False
                     for firma in laender_firmen:
                         firma.responsible_for_customs = False
 
-                # --- NEU: Schritt 5b: Einfuhrumsatzsteuer ---
+            # --- Schritt 5b: Einfuhrumsatzsteuer ---
+            if import_relevant:
+                st.divider()
                 st.subheader("Schritt 5b: Einfuhrumsatzsteuer (EUSt)")
                 st.info(
-                    "Wer meldet die Einfuhr an und schuldet die Einfuhrumsatzsteuer im Bestimmungsland?",
+                    "Da die Lieferung aus einem Drittland in die EU geht, ist die Einfuhrumsatzsteuer relevant.",
                     icon="🇪🇺",
                 )
                 customs_import_vat_options = ["keine Auswahl"] + laender_firmen
@@ -320,7 +339,7 @@ def Eingabe_1():
                     "customs_import_vat_index", 0
                 )
                 selected_import_vat_index = st.selectbox(
-                    "Wer ist für die Einfuhrumsatzsteuer verantwortlich?",
+                    "Wer meldet die Einfuhr an und schuldet die Einfuhrumsatzsteuer?",
                     range(len(customs_import_vat_options)),
                     index=default_import_vat_index,
                     format_func=lambda idx: str(customs_import_vat_options[idx]),
@@ -331,14 +350,11 @@ def Eingabe_1():
                     selected_import_vat_index
                 ]
 
-                # Setze responsible_for_import_vat (Annahme: Attribut existiert in Handelsstufe)
-                is_customs_import_vat_set = False
                 if isinstance(customs_import_vat_firma, Handelsstufe):
-                    is_customs_import_vat_set = True
+                    is_customs_import_vat_set = True  # Jetzt auf True setzen
                     for firma in laender_firmen:
-                        # Stelle sicher, dass das Attribut existiert
                         if not hasattr(firma, "responsible_for_import_vat"):
-                            firma.responsible_for_import_vat = False  # Initialisieren
+                            firma.responsible_for_import_vat = False
                         firma.responsible_for_import_vat = (
                             firma.identifier == customs_import_vat_firma.identifier
                         )
@@ -347,17 +363,18 @@ def Eingabe_1():
                         icon="💶",
                     )
                 else:
+                    # is_customs_import_vat_set bleibt False
                     for firma in laender_firmen:
                         if hasattr(firma, "responsible_for_import_vat"):
                             firma.responsible_for_import_vat = False
 
             # --- Analyse-Button (Schritt 6) ---
-            # Alle Bedingungen prüfen
+            # Alle notwendigen Bedingungen prüfen
             endanalyse_benötigte_daten = (
                 is_transport_selected
                 and is_intermediary_status_set
-                and is_customs_export_set
-                and is_customs_import_vat_set
+                and is_customs_export_set  # Ist True wenn nicht relevant, oder wenn Auswahl getroffen
+                and is_customs_import_vat_set  # Ist True wenn nicht relevant, oder wenn Auswahl getroffen
             )
 
             if endanalyse_benötigte_daten:
@@ -372,10 +389,9 @@ def Eingabe_1():
                     icon="🛫",
                     on_click=helper_switch_page,
                     args=(1, laender_firmen),
-                    use_container_width=True,  # Button über volle Breite
+                    use_container_width=True,
                 )
             else:
-                # Zeige an, was noch fehlt
                 missing_data = []
                 if not is_transport_selected:
                     missing_data.append("Transporteur auswählen (Schritt 4)")
@@ -383,9 +399,10 @@ def Eingabe_1():
                     missing_data.append(
                         "Status des transportierenden Zwischenhändlers auswählen (Schritt 4)"
                     )
-                if not is_customs_export_set:
+                # Nur hinzufügen, wenn relevant UND nicht gesetzt
+                if export_relevant and not is_customs_export_set:
                     missing_data.append("Export-Zollabwickler auswählen (Schritt 5)")
-                if not is_customs_import_vat_set:
+                if import_relevant and not is_customs_import_vat_set:
                     missing_data.append(
                         "Verantwortlichen für EUSt auswählen (Schritt 5b)"
                     )
@@ -410,7 +427,7 @@ def Eingabe_1():
                 # Zusatzinfos: Abw. USt-ID und Status
                 zusatz_infos = []
                 if company.changed_vat and company.new_country:
-                    zusatz_infos.append(f"USt-ID: {company.new_country.code}")
+                    zusatz_infos.append(f"USt-ID: {company.new_country.code}\n")
                 if company.intermediary_status is not None:
                     zusatz_infos.append(
                         f"Status: {company.get_intermideary_status()}\n"
