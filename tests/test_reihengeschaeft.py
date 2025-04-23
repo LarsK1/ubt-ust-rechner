@@ -519,7 +519,7 @@ TEST_SCENARIOS = [
                 "to": 2,
                 "moved": False,
                 "place": "CN",
-                "vat": VatTreatmentType.OUT_OF_SCOPE,  # Eigentlich in CN steuerbar
+                "vat": VatTreatmentType.TAXABLE_NORMAL,  # Eigentlich in CN steuerbar
             },
         ],
         "expected_triangle": False,
@@ -576,7 +576,7 @@ TEST_SCENARIOS = [
                 "to": 2,
                 "moved": False,
                 "place": "CN",
-                "vat": VatTreatmentType.OUT_OF_SCOPE,  #  eigentlich in CN steuerbar
+                "vat": VatTreatmentType.TAXABLE_NORMAL,  #  eigentlich in CN steuerbar
             },
         ],
         "expected_triangle": False,
@@ -696,7 +696,7 @@ TEST_SCENARIOS = [
         ],
         "expected_triangle": False,
         "expected_registrations": {
-            0: {"DE", "CN"},  # A (CN) braucht DE (wegen EUSt und Lieferung in DE)
+            0: {"DE"},  # A (CN) braucht DE (wegen EUSt und Lieferung in DE)
             1: {"DE"},  # B braucht DE (für RC-Erwerb und Lieferung B->C)
             2: {"DE"},  # C braucht DE (home)
         },

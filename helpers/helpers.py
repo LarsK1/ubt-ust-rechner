@@ -299,8 +299,37 @@ class Lieferung:
         lieferant_country = self.lieferant.country
         kunde_country = self.kunde.country
 
+        # --- NEUE/ANGEPASSTE LOGIK HIER ---
+        if not lieferant_country.EU:
+            # Fall: Lieferant ist NICHT EU, Ort ist aber EU (z.B. durch §3 Abs. 8)
+            # Prüfe, ob Lieferant die EUSt schuldet
+            lieferant_pays_import_vat = self.lieferant.responsible_for_import_vat
+
+            if lieferant_pays_import_vat:
+                # Lieferant (Nicht-EU) schuldet EUSt -> wird wie Inländer behandelt
+                # -> Normale Steuerpflicht für diese Lieferung im 'place'-Land
+                self.vat_treatment = VatTreatmentType.TAXABLE_NORMAL
+                self.invoice_note = (
+                    f"Steuerpflichtig in {place.code} (Lieferant schuldet EUSt)"
+                )
+            else:
+                # Lieferant (Nicht-EU) schuldet EUSt NICHT.
+                # Prüfe auf Reverse Charge (§13b UStG)
+                # ... (bisherige Logik für Reverse Charge oder Normal bei Nicht-EU-Lieferant) ...
+                kunde_is_taxable_person_in_place = (
+                    kunde_country.EU and kunde_country == place
+                )
+                if kunde_is_taxable_person_in_place:
+                    self.vat_treatment = VatTreatmentType.TAXABLE_REVERSE_CHARGE
+                    self.invoice_note = f"Reverse Charge in {place.code}"
+                else:
+                    self.vat_treatment = VatTreatmentType.TAXABLE_NORMAL
+                    self.invoice_note = (
+                        f"Steuerpflichtig in {place.code} (Prüfung §13b nötig)"
+                    )
+
         # --- Moved Supply Logic ---
-        if self.is_moved_supply:
+        elif self.is_moved_supply:
             is_eu_transaction = place.EU and end_country.EU  # Grundprüfung EU
 
             # Prüfung auf Dreiecksgeschäft ---
@@ -766,45 +795,55 @@ class Transaktion:
                         raise ValueError(
                             f"Konnte Lieferung vom transportierenden Zwischenhändler {shipping_company} nicht finden."
                         )
+        if not bewegte_lieferung_gefunden or bewegte_lieferung_obj is None:
+            # Dieser Fehler sollte durch die obigen Prüfungen eigentlich nicht mehr auftreten
+            raise ValueError("Konnte die bewegte Lieferung nicht eindeutig zuordnen.")
+
+        # 5. ORTE BESTIMMEN (NEUE STRUKTUR)
+
+        # 5a. Initialen Ort der bewegten Lieferung setzen (Beginn Transport)
+        bewegte_lieferung_obj.place_of_supply = start_country
+
+        # 5b. Prüfung auf Lieferortverlagerung bei Einfuhr (§ 3 Abs. 8 UStG)
         is_import_case = not start_country.EU and end_country.EU
-        place_shift_applied = False
         if is_import_case:
-            # Finde die Firma, die für EUSt verantwortlich ist
             eust_responsible_firma: Handelsstufe | None = None
             for firma in firmen:
                 if firma.responsible_for_import_vat:
                     eust_responsible_firma = firma
                     break
 
-            # Prüfe, ob der Lieferant der bewegten Lieferung für EUSt verantwortlich ist
             if (
                 eust_responsible_firma
                 and eust_responsible_firma.identifier
                 == bewegte_lieferung_obj.lieferant.identifier
             ):
                 # Ja, Lieferort der bewegten Lieferung wird ins Einfuhrland verlagert
-                bewegte_lieferung_obj.place_of_supply = end_country
-                place_shift_applied = True
+                bewegte_lieferung_obj.place_of_supply = (
+                    end_country  # Überschreibe mit DE
+                )
                 print(
-                    f"DEBUG: Lieferortverlagerung nach {end_country.code} für bewegte Lieferung angewendet (§ 3 Abs. 8 UStG)."
-                )  # Debug-Ausgabe
+                    f"DEBUG: Lieferortverlagerung nach {end_country.code} für bewegte Lieferung {bewegte_lieferung_obj.lieferant.identifier} -> {bewegte_lieferung_obj.kunde.identifier} angewendet (§ 3 Abs. 8 UStG)."
+                )
 
-        # Standard-Lieferortzuweisung (wenn keine Verlagerung stattfand)
-        if not place_shift_applied:
-            bewegte_lieferung_obj.place_of_supply = (
-                start_country  # Ort = Beginn Transport
+        # 5c. Orte der ruhenden Lieferungen bestimmen
+        try:
+            bewegte_index = self.lieferungen.index(bewegte_lieferung_obj)
+        except ValueError:
+            raise ValueError(
+                "Bewegte Lieferung nicht in der Liste gefunden - interner Fehler."
             )
 
-        if not bewegte_lieferung_gefunden or bewegte_lieferung_obj is None:
-            # Dieser Fehler sollte durch die obigen Prüfungen eigentlich nicht mehr auftreten
-            raise ValueError("Konnte die bewegte Lieferung nicht eindeutig zuordnen.")
+        # Ruhende Lieferungen VOR der bewegten haben Ort = Startland
+        for i in range(bewegte_index):
+            self.lieferungen[i].place_of_supply = start_country
+        # Ruhende Lieferungen NACH der bewegten haben Ort = Endland
+        for i in range(bewegte_index + 1, len(self.lieferungen)):
+            self.lieferungen[i].place_of_supply = end_country
 
-        # 5. Ort der Lieferung UND Steuerbehandlung für alle Lieferungen bestimmen
+        # 6. Steuerliche Behandlung für alle Lieferungen bestimmen
+        #    (Diese Methode nutzt jetzt den korrekt gesetzten Ort)
         for lief in self.lieferungen:
-            lief.determine_place_of_supply(
-                bewegte_lieferung_obj, start_country, end_country
-            )
-            # Nach Bestimmung des Ortes die Steuerbehandlung ermitteln
             lief.determine_vat_treatment(start_country, end_country)
 
         return self.lieferungen
