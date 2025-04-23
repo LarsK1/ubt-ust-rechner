@@ -13,8 +13,6 @@ from helpers.helpers import (
     IntermediaryStatus,
 )
 
-st.title("USt-Reihengeschäfte")
-
 
 def helper_switch_page(page, options):
     """
@@ -26,6 +24,7 @@ def helper_switch_page(page, options):
 
 
 def Eingabe_1():
+    st.title("USt-Reihengeschäfte - Dateneingabe")
     laender_firmen: list[Handelsstufe] = []
     show_next_steps = False
 
@@ -33,9 +32,7 @@ def Eingabe_1():
     laender = get_countries()
     schritt = 0
 
-    diagram = st_fixed_container(
-        mode="sticky", position="top", border=True, margin="0px"
-    )
+    diagram = st_fixed_container(mode="sticky", position="top", margin="0px")
 
     with st.expander(
         "Grundlegende Daten", expanded=True
@@ -417,7 +414,6 @@ def Eingabe_1():
 
     # --- Diagramm (immer anzeigen, wenn Kette existiert) ---
     if len(laender_firmen) >= 2:  # Mindestens 2 Firmen für Diagramm
-        diagram.subheader("Geschäftsablauf (Eingabeübersicht)")
         transaction = Transaktion(laender_firmen[0], laender_firmen[-1])
         dot = Digraph(comment="Geschäftsablauf", graph_attr={"rankdir": "LR"})
         with dot.subgraph() as s:
@@ -432,6 +428,8 @@ def Eingabe_1():
                     zusatz_infos.append(
                         f"Status: {company.get_intermideary_status()}\n"
                     )
+                if company.responsible_for_import_vat:
+                    zusatz_infos.append("EUSt-Anmeldung\n")
 
                 if zusatz_infos:
                     company_text += "\n" + "".join(zusatz_infos)
@@ -496,7 +494,7 @@ def Analyse_1():
     if "transaction" in st.session_state:
         transaction: Transaktion = st.session_state["transaction"]
 
-        st.header("Analyse des Reihengeschäfts")
+        st.title("USt-Reihengeschäfte - Analyse")
         is_triangle = transaction.is_triangular_transaction()
         if is_triangle:
             st.success(
@@ -621,9 +619,7 @@ def Analyse_1():
             # --- Abschnitt Rechnungsstellung ---
             # Nur anzeigen, wenn die Berechnung erfolgreich war
             if alle_lieferungen:
-                with st.expander(
-                    "Übersicht der Rechnungsstellung", icon="📝", expanded=True
-                ):
+                with st.expander("Übersicht der Rechnungsstellung", icon="📝"):
                     st.markdown("#### Rechnungsdetails pro Lieferung")
                     lief: Lieferung  # Type Hint für Klarheit
                     for i, lief in enumerate(alle_lieferungen):
@@ -741,8 +737,12 @@ def Analyse_1():
                         ):
                             st.markdown("#### Potenzielle Meldungen pro Firma")
                             st.caption(
-                                "Zeigt mögliche Intrastat- und ZM-Pflichten an. "
-                                "Nationale Schwellenwerte und Sonderregeln sind nicht berücksichtigt!"
+                                """
+								**Wichtige Hinweise:**
+								*   **Intrastat:** Meldepflichten (Versendung/Eingang) entstehen erst **ab Erreichen nationaler Schwellenwerte**. Diese variieren je EU-Land und Melderichtung.
+								*   **Zusammenfassende Meldung (ZM):** Für steuerfreie innergemeinschaftliche Lieferungen erforderlich. Die **korrekte USt-Id des Abnehmers** und weitere **Nachweise** (z.B. Gelangensbestätigung) sind entscheidend für die Steuerfreiheit. Bei Dreiecksgeschäften gelten besondere Kennzeichnungspflichten.
+								*   Die Anzeige hier stellt **keine** Berücksichtigung dieser Schwellenwerte oder detaillierten Nachweispflichten dar.
+								"""
                             )
 
                             firmen_in_order = transaction.get_ordered_chain_companies()
