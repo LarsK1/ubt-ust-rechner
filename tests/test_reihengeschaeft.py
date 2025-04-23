@@ -95,6 +95,11 @@ TEST_SCENARIOS_THREE_COMPANIES = [
             1: {"AT"},  # B braucht AT (für IG Erwerb und B->C)
             2: {"AT"},  # C braucht AT
         },
+        "expected_reporting": {
+            0: {"ZM", "Intrastat Versendung"},  # A: ZM für IG Lief, Intra-V
+            1: {"Intrastat Eingang"},  # B: Intra-E
+            2: set(),  # C: Nichts
+        },
     },
     # --- Szenario 2: DE -> AT -> AT, C transportiert ---
     {
@@ -126,7 +131,7 @@ TEST_SCENARIOS_THREE_COMPANIES = [
             },  # C transportiert
         ],
         "expected_deliveries": [
-            # A -> B: Ruhend, Ort DE (Start), Steuerfrei IG (DE->AT)
+            # A -> B: Ruhend, Ort DE (Start), Steuerpflichtig DE (DE->AT in DE)
             {
                 "from": 0,
                 "to": 1,
@@ -134,7 +139,7 @@ TEST_SCENARIOS_THREE_COMPANIES = [
                 "place": "DE",
                 "vat": VatTreatmentType.TAXABLE_NORMAL,
             },
-            # B -> C: Bewegt (da C transportiert), Ort DE (Start), Steuerpflichtig DE (AT->AT, Ort DE)
+            # B -> C: Bewegt (da C transportiert), Ort DE (Start), Steuerfrei IG (DE->AT)
             {
                 "from": 1,
                 "to": 2,
@@ -145,14 +150,19 @@ TEST_SCENARIOS_THREE_COMPANIES = [
         ],
         "expected_triangle": False,
         "expected_registrations": {
-            0: {"DE"},  # A braucht DE (für IG Supply)
-            1: {"AT", "DE"},  # AT (für IG Erwerb)
-            2: {"AT"},  # C braucht AT
+            0: {"DE"},  # A braucht DE (für A->B)
+            1: {"AT", "DE"},  # B braucht AT (home) und DE (für B->C)
+            2: {"AT"},  # C braucht AT (für IG Erwerb)
+        },
+        "expected_reporting": {
+            0: set(),
+            1: {"ZM", "Intrastat Versendung"},  # B: ZM für IG Lief, Intra-V
+            2: {"Intrastat Eingang"},  # C: Intra-E
         },
     },
     # --- Szenario 3: DE -> AT -> AT, B transportiert als Abnehmer ---
     {
-        "description": "DE -> AT -> AT (3 Firmen), B transportiert als Abnehner",
+        "description": "DE -> AT -> AT (3 Firmen), B transportiert als Abnehmer",  # Beschreibung korrigiert
         "companies": [
             {
                 "id": 0,
@@ -180,7 +190,7 @@ TEST_SCENARIOS_THREE_COMPANIES = [
             },
         ],
         "expected_deliveries": [
-            # A -> B: Bewegt (da B als Lieferer auftritt), Ort DE (Start), Steuerfrei IG (DE->AT)
+            # A -> B: Bewegt (da B als Abnehmer transportiert), Ort DE (Start), Steuerfrei IG (DE->AT)
             {
                 "from": 0,
                 "to": 1,
@@ -205,10 +215,15 @@ TEST_SCENARIOS_THREE_COMPANIES = [
             },  # B braucht AT (für IG Erwerb von A und steuerbare Lief B->C in AT)
             2: {"AT"},  # C braucht AT
         },
+        "expected_reporting": {
+            0: {"ZM", "Intrastat Versendung"},  # A: ZM für IG Lief, Intra-V
+            1: {"Intrastat Eingang"},  # B: Intra-E
+            2: set(),
+        },
     },
     # --- Szenario 4: DE -> AT -> AT, B transportiert als Lieferer ---
     {
-        "description": "DE -> AT -> AT (3 Firmen), B transportiert als Lieferer",  # Beschreibung korrigiert
+        "description": "DE -> AT -> AT (3 Firmen), B transportiert als Lieferer",
         "companies": [
             {
                 "id": 0,
@@ -224,7 +239,7 @@ TEST_SCENARIOS_THREE_COMPANIES = [
                 "ship": True,
                 "customs": False,
                 "vat_change_code": None,
-                "intermediary_status": IntermediaryStatus.SUPPLIER,  # Status korrigiert
+                "intermediary_status": IntermediaryStatus.SUPPLIER,
             },
             {
                 "id": 2,
@@ -240,17 +255,17 @@ TEST_SCENARIOS_THREE_COMPANIES = [
             {
                 "from": 0,
                 "to": 1,
-                "moved": False,  # Erwartung: Ruhend
+                "moved": False,
                 "place": "DE",
                 "vat": VatTreatmentType.TAXABLE_NORMAL,
             },
-            # B -> C: Bewegt (da B als Erwerber transportiert), Ort DE (Start), Steuerfrei IG (AT->AT, Ort DE, Ende AT)
+            # B -> C: Bewegt (da B als Lieferer transportiert), Ort DE (Start), Steuerfrei IG (DE->AT)
             {
                 "from": 1,
                 "to": 2,
-                "moved": True,  # Erwartung: Bewegt (korrigiert)
+                "moved": True,
                 "place": "DE",
-                "vat": VatTreatmentType.EXEMPT_IC_SUPPLY,  # Erwartung: Steuerfrei IG (korrigiert)
+                "vat": VatTreatmentType.EXEMPT_IC_SUPPLY,
             },
         ],
         "expected_triangle": False,
@@ -258,6 +273,11 @@ TEST_SCENARIOS_THREE_COMPANIES = [
             0: {"DE"},  # A braucht DE (für A->B)
             1: {"DE", "AT"},  # B braucht DE (für IG Supply B->C) und AT (home)
             2: {"AT"},  # C braucht AT (für IG Erwerb)
+        },
+        "expected_reporting": {
+            0: set(),
+            1: {"ZM", "Intrastat Versendung"},  # B: ZM für IG Lief, Intra-V
+            2: {"Intrastat Eingang"},  # C: Intra-E
         },
     },
     # --- Szenario 5: AT -> FR -> IT (Dreieck), A transportiert ---
@@ -313,6 +333,11 @@ TEST_SCENARIOS_THREE_COMPANIES = [
             1: {"FR"},  # B nur in FR
             2: {"IT"},  # C nur in IT
         },
+        "expected_reporting": {
+            0: {"ZM", "Intrastat Versendung"},  # A: ZM für IG Lief, Intra-V
+            1: {"ZM (Dreieck)"},  # B: ZM mit Dreieckskennung
+            2: {"Intrastat Eingang"},  # C: Intra-E
+        },
     },
     # --- Szenario 6: DE -> AT -> IT, A transportiert (Dreieck) ---
     {
@@ -367,10 +392,15 @@ TEST_SCENARIOS_THREE_COMPANIES = [
             1: {"AT"},
             2: {"IT"},
         },
+        "expected_reporting": {
+            0: {"ZM", "Intrastat Versendung"},  # A: ZM für IG Lief, Intra-V
+            1: {"ZM (Dreieck)"},  # B: ZM mit Dreieckskennung
+            2: {"Intrastat Eingang"},  # C: Intra-E
+        },
     },
     # --- Szenario 7: DE -> AT -> IT, B transportiert als Abnehmer (Dreieck) ---
     {
-        "description": "DE -> AT -> IT, B transportiert als Abnehmer",
+        "description": "DE -> AT -> IT, B transportiert als Abnehmer (Dreieck)",  # Beschreibung präzisiert
         "companies": [
             {
                 "id": 0,
@@ -398,7 +428,7 @@ TEST_SCENARIOS_THREE_COMPANIES = [
             },
         ],
         "expected_deliveries": [
-            # A -> B
+            # A -> B: Bewegt, Ort DE, Steuerfrei IG (DE->AT)
             {
                 "from": 0,
                 "to": 1,
@@ -406,7 +436,7 @@ TEST_SCENARIOS_THREE_COMPANIES = [
                 "place": "DE",
                 "vat": VatTreatmentType.EXEMPT_IC_SUPPLY,
             },
-            # B -> C
+            # B -> C: Ruhend, Ort IT, RC (AT->IT in IT)
             {
                 "from": 1,
                 "to": 2,
@@ -422,6 +452,11 @@ TEST_SCENARIOS_THREE_COMPANIES = [
                 "AT",
             },  # AT (home)
             2: {"IT"},  # C braucht IT (home)
+        },
+        "expected_reporting": {
+            0: {"ZM", "Intrastat Versendung"},  # A: ZM für IG Lief, Intra-V
+            1: {"ZM (Dreieck)"},  # B: ZM mit Dreieckskennung
+            2: {"Intrastat Eingang"},  # C: Intra-E
         },
     },
     # --- Szenario 8: DE -> AT -> IT, C transportiert ---
@@ -477,8 +512,13 @@ TEST_SCENARIOS_THREE_COMPANIES = [
             1: {
                 "DE",
                 "AT",
-            },  # B braucht DE (A->B Erwerb & B->C Lief), AT (home), IT (B->C Erwerb)
-            2: {"IT"},  # C braucht IT (home)
+            },  # B braucht DE (für B->C Lief), AT (home)
+            2: {"IT"},  # C braucht IT (für IG Erwerb)
+        },
+        "expected_reporting": {
+            0: set(),
+            1: {"ZM", "Intrastat Versendung"},  # B: ZM für IG Lief, Intra-V
+            2: {"Intrastat Eingang"},  # C: Intra-E
         },
     },
     # --- Szenario 9: DE -> CN -> CN, A transportiert & Export ---
@@ -537,6 +577,11 @@ TEST_SCENARIOS_THREE_COMPANIES = [
             1: set(),  # B (CN) braucht keine EU-Reg.
             2: set(),  # C (CN) braucht keine EU-Reg.
         },
+        "expected_reporting": {  # Export löst keine EU-Meldungen aus
+            0: set(),
+            1: set(),
+            2: set(),
+        },
     },
     # --- Szenario 10: DE -> CN -> CN, B transportiert als Abnehmer & Export ---
     {
@@ -546,7 +591,7 @@ TEST_SCENARIOS_THREE_COMPANIES = [
                 "id": 0,
                 "country_code": "DE",
                 "ship": False,
-                "customs": True,
+                "customs": False,
                 "import_vat": False,
                 "vat_change_code": None,
                 "intermediary_status": None,
@@ -555,7 +600,7 @@ TEST_SCENARIOS_THREE_COMPANIES = [
                 "id": 1,
                 "country_code": "CN",
                 "ship": True,  # B transportiert
-                "customs": False,
+                "customs": True,  # Korrigiert: B macht Zoll
                 "import_vat": False,
                 "vat_change_code": None,
                 "intermediary_status": IntermediaryStatus.BUYER,  # als Abnehmer
@@ -593,6 +638,11 @@ TEST_SCENARIOS_THREE_COMPANIES = [
             0: {"DE"},  # A braucht DE (Lieferung in DE)
             1: set(),  # B (CN) braucht keine EU-Reg.
             2: set(),  # C (CN) braucht keine EU-Reg.
+        },
+        "expected_reporting": {  # Export löst keine EU-Meldungen aus
+            0: set(),
+            1: set(),
+            2: set(),
         },
     },
     # --- Szenario 11: DE -> DE -> CN, B(FR-ID) transportiert als Abnehmer & Export ---
@@ -651,6 +701,11 @@ TEST_SCENARIOS_THREE_COMPANIES = [
             1: {"DE", "FR"},  # B braucht DE (home, Export) und FR (USt-ID Nutzung)
             2: set(),  # C (CN) braucht keine EU-Reg.
         },
+        "expected_reporting": {  # Export löst keine EU-Meldungen aus
+            0: set(),
+            1: set(),
+            2: set(),
+        },
     },
     # --- Szenario 12: CN -> DE -> DE, A transportiert, A macht EUSt ---
     # (§ 3 Abs. 8 UStG sollte greifen -> Lieferort A->B wird DE)
@@ -661,7 +716,7 @@ TEST_SCENARIOS_THREE_COMPANIES = [
                 "id": 0,
                 "country_code": "CN",
                 "ship": True,  # A transportiert
-                "customs": False,  # Export CH nicht relevant für EU-USt
+                "customs": False,
                 "import_vat": True,  # A macht EUSt in DE
                 "vat_change_code": None,
                 "intermediary_status": None,
@@ -686,13 +741,13 @@ TEST_SCENARIOS_THREE_COMPANIES = [
             },
         ],
         "expected_deliveries": [
-            # A -> B: Bewegt, Ort CH->DE (§3 Abs. 8), Steuerpflichtig DE (RC)
+            # A -> B: Bewegt, Ort DE (verlagert!), Steuerpflichtig DE (Normal, da A EUSt zahlt)
             {
                 "from": 0,
                 "to": 1,
                 "moved": True,
-                "place": "DE",  # Ort verlagert nach DE
-                "vat": VatTreatmentType.TAXABLE_NORMAL,  # A(CN) an B(DE) in DE -> RC
+                "place": "DE",
+                "vat": VatTreatmentType.TAXABLE_NORMAL,
             },
             # B -> C: Ruhend, Ort DE (Ende Transport), Steuerpflichtig DE
             {
@@ -700,14 +755,19 @@ TEST_SCENARIOS_THREE_COMPANIES = [
                 "to": 2,
                 "moved": False,
                 "place": "DE",
-                "vat": VatTreatmentType.TAXABLE_NORMAL,  # B(DE) an C(DE) in DE -> Normal
+                "vat": VatTreatmentType.TAXABLE_NORMAL,
             },
         ],
         "expected_triangle": False,
         "expected_registrations": {
             0: {"DE"},  # A (CN) braucht DE (wegen EUSt und Lieferung in DE)
-            1: {"DE"},  # B braucht DE (für RC-Erwerb und Lieferung B->C)
+            1: {"DE"},  # B braucht DE (home)
             2: {"DE"},  # C braucht DE (home)
+        },
+        "expected_reporting": {  # Import und Inland lösen keine EU-Meldungen aus
+            0: set(),
+            1: set(),
+            2: set(),
         },
     },
     # --- Szenario 13: DE -> DE -> CN, B transportiert ---
@@ -763,7 +823,12 @@ TEST_SCENARIOS_THREE_COMPANIES = [
         "expected_triangle": False,
         "expected_registrations": {
             0: {"DE"},
-            1: {"DE"},  # wegen bewegte Lieferung keine Registrierungspflicht in CN
+            1: {"DE"},
+            2: set(),
+        },
+        "expected_reporting": {  # Export löst keine EU-Meldungen aus
+            0: set(),
+            1: set(),
             2: set(),
         },
     },
@@ -800,7 +865,7 @@ TEST_SCENARIOS_THREE_COMPANIES = [
             },
         ],
         "expected_deliveries": [
-            # A -> B: Ruhend, Ort DE->DE
+            # A -> B: Bewegt, Ort DE, Steuerfrei Export
             {
                 "from": 0,
                 "to": 1,
@@ -814,15 +879,80 @@ TEST_SCENARIOS_THREE_COMPANIES = [
                 "to": 2,
                 "moved": False,
                 "place": "CN",
-                "vat": VatTreatmentType.OUT_OF_SCOPE,  # Export an C
+                "vat": VatTreatmentType.OUT_OF_SCOPE,
             },
         ],
         "expected_triangle": False,
         "expected_registrations": {
             0: {"DE"},
-            1: {
-                "DE",
-            },  # wegen bewegte Lieferung keine Registrierungspflicht in CN
+            1: {"DE"},
+            2: set(),
+        },
+        "expected_reporting": {  # Export löst keine EU-Meldungen aus
+            0: set(),
+            1: set(),
+            2: set(),
+        },
+    },
+    # --- Szenario 15: DE -> DE -> DE, A transportiert ---
+    {
+        "description": "DE -> DE -> DE (3 Firmen, Inland), A transportiert",
+        "companies": [
+            {
+                "id": 0,
+                "country_code": "DE",
+                "ship": True,  # A transportiert
+                "customs": False,
+                "import_vat": False,
+                "vat_change_code": None,
+                "intermediary_status": None,
+            },
+            {
+                "id": 1,
+                "country_code": "DE",
+                "ship": False,
+                "customs": False,
+                "import_vat": False,
+                "vat_change_code": None,
+                "intermediary_status": None,
+            },
+            {
+                "id": 2,
+                "country_code": "DE",
+                "ship": False,
+                "customs": False,
+                "import_vat": False,
+                "vat_change_code": None,
+                "intermediary_status": None,
+            },
+        ],
+        "expected_deliveries": [
+            # A -> B: Bewegt (da A transportiert), Ort DE, Steuerpflichtig DE
+            {
+                "from": 0,
+                "to": 1,
+                "moved": True,
+                "place": "DE",
+                "vat": VatTreatmentType.TAXABLE_NORMAL,
+            },
+            # B -> C: Ruhend, Ort DE (Ende = Start), Steuerpflichtig DE
+            {
+                "from": 1,
+                "to": 2,
+                "moved": False,
+                "place": "DE",
+                "vat": VatTreatmentType.TAXABLE_NORMAL,
+            },
+        ],
+        "expected_triangle": False,  # Kein Dreiecksgeschäft im Inland
+        "expected_registrations": {
+            0: {"DE"},  # A braucht DE
+            1: {"DE"},  # B braucht DE
+            2: {"DE"},  # C braucht DE
+        },
+        "expected_reporting": {  # Inland löst keine EU-Meldungen aus
+            0: set(),
+            1: set(),
             2: set(),
         },
     },
@@ -2191,6 +2321,7 @@ def test_chain_transaction_scenarios_three_companies(scenario):
         actual_deliveries = transaction.calculate_delivery_and_vat()
         actual_is_triangle = transaction.is_triangular_transaction()
         actual_registrations_raw = transaction.determine_registration_obligations()
+        actual_reporting_raw = transaction.determine_reporting_obligations()
     except ValueError as e:
         # Falls ein Fehler erwartet wird (z.B. kein Transporteur), hier prüfen
         # pytest.fail(f"Unerwarteter Fehler bei der Berechnung: {e}")
@@ -2250,6 +2381,26 @@ def test_chain_transaction_scenarios_three_companies(scenario):
     assert (
         actual_registrations_formatted == expected_registrations_formatted
     ), "Registrierungspflichten stimmen nicht überein"
+
+    # e) Prüfung der Meldepflichten
+    actual_reporting_formatted = {
+        firma.identifier: meldungen_set
+        for firma, meldungen_set in actual_reporting_raw.items()
+        # Nur Firmen mit erwarteten Meldungen berücksichtigen für einfacheren Vergleich
+        if meldungen_set or firma.identifier in scenario.get("expected_reporting", {})
+    }
+    expected_reporting_formatted = scenario.get(
+        "expected_reporting", {}
+    )  # Default leeres Dict
+
+    # Füge leere Sets für Firmen hinzu, die erwartet werden, aber nichts melden
+    for firma_id in expected_reporting_formatted:
+        if firma_id not in actual_reporting_formatted:
+            actual_reporting_formatted[firma_id] = set()
+
+    assert (
+        actual_reporting_formatted == expected_reporting_formatted
+    ), f"Meldepflichten stimmen nicht überein.\nErwartet: {expected_reporting_formatted}\nBekommen: {actual_reporting_formatted}"
 
     print("--- Test Passed ---")
 
@@ -2280,6 +2431,7 @@ def test_chain_transaction_scenarios_four_companies(scenario):
         actual_deliveries = transaction.calculate_delivery_and_vat()
         actual_is_triangle = transaction.is_triangular_transaction()
         actual_registrations_raw = transaction.determine_registration_obligations()
+        actual_reporting_raw = transaction.determine_reporting_obligations()
     except ValueError as e:
         # Falls ein Fehler erwartet wird (z.B. kein Transporteur), hier prüfen
         # pytest.fail(f"Unerwarteter Fehler bei der Berechnung: {e}")
@@ -2339,6 +2491,26 @@ def test_chain_transaction_scenarios_four_companies(scenario):
     assert (
         actual_registrations_formatted == expected_registrations_formatted
     ), "Registrierungspflichten stimmen nicht überein"
+
+    # e) Prüfung der Meldepflichten
+    actual_reporting_formatted = {
+        firma.identifier: meldungen_set
+        for firma, meldungen_set in actual_reporting_raw.items()
+        # Nur Firmen mit erwarteten Meldungen berücksichtigen für einfacheren Vergleich
+        if meldungen_set or firma.identifier in scenario.get("expected_reporting", {})
+    }
+    expected_reporting_formatted = scenario.get(
+        "expected_reporting", {}
+    )  # Default leeres Dict
+
+    # Füge leere Sets für Firmen hinzu, die erwartet werden, aber nichts melden
+    for firma_id in expected_reporting_formatted:
+        if firma_id not in actual_reporting_formatted:
+            actual_reporting_formatted[firma_id] = set()
+
+    assert (
+        actual_reporting_formatted == expected_reporting_formatted
+    ), f"Meldepflichten stimmen nicht überein.\nErwartet: {expected_reporting_formatted}\nBekommen: {actual_reporting_formatted}"
 
     print("--- Test Passed ---")
 
@@ -2369,6 +2541,7 @@ def test_chain_transaction_scenarios_TEN_companies(scenario):
         actual_deliveries = transaction.calculate_delivery_and_vat()
         actual_is_triangle = transaction.is_triangular_transaction()
         actual_registrations_raw = transaction.determine_registration_obligations()
+        actual_reporting_raw = transaction.determine_reporting_obligations()
     except ValueError as e:
         # Falls ein Fehler erwartet wird (z.B. kein Transporteur), hier prüfen
         # pytest.fail(f"Unerwarteter Fehler bei der Berechnung: {e}")
@@ -2428,6 +2601,26 @@ def test_chain_transaction_scenarios_TEN_companies(scenario):
     assert (
         actual_registrations_formatted == expected_registrations_formatted
     ), "Registrierungspflichten stimmen nicht überein"
+
+    # e) Prüfung der Meldepflichten
+    actual_reporting_formatted = {
+        firma.identifier: meldungen_set
+        for firma, meldungen_set in actual_reporting_raw.items()
+        # Nur Firmen mit erwarteten Meldungen berücksichtigen für einfacheren Vergleich
+        if meldungen_set or firma.identifier in scenario.get("expected_reporting", {})
+    }
+    expected_reporting_formatted = scenario.get(
+        "expected_reporting", {}
+    )  # Default leeres Dict
+
+    # Füge leere Sets für Firmen hinzu, die erwartet werden, aber nichts melden
+    for firma_id in expected_reporting_formatted:
+        if firma_id not in actual_reporting_formatted:
+            actual_reporting_formatted[firma_id] = set()
+
+    assert (
+        actual_reporting_formatted == expected_reporting_formatted
+    ), f"Meldepflichten stimmen nicht überein.\nErwartet: {expected_reporting_formatted}\nBekommen: {actual_reporting_formatted}"
 
     print("--- Test Passed ---")
 

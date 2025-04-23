@@ -712,9 +712,9 @@ class Transaktion:
                                            z.B. {"Intrastat Versendung", "Intrastat Eingang", "ZM"}
         """
         reporting_needs = {firma: set() for firma in self.get_ordered_chain_companies()}
+        firmen = self.get_ordered_chain_companies()  # Hinzugefügt für Dreieckslogik
 
         if not self.lieferungen:
-            # Stelle sicher, dass Lieferungen berechnet wurden (sollte vorher passiert sein)
             return reporting_needs
 
         is_triangle = self.is_triangular_transaction()
@@ -723,20 +723,36 @@ class Transaktion:
             lieferant = lief.lieferant
             kunde = lief.kunde
 
-            # ZM (EC Sales List)
-            if lief.potential_ecsl_report:
-                note = "ZM (Dreieck)" if is_triangle else "ZM"
-                reporting_needs[lieferant].add(note)
+            if lief.vat_treatment == VatTreatmentType.EXEMPT_IC_SUPPLY:
+                # ZM (EC Sales List)
+                if is_triangle:
+                    # Im Dreieck: A meldet normale ZM, B meldet ZM mit Dreieckskennung
+                    if lieferant == firmen[0] and kunde == firmen[1]:  # A -> B
+                        reporting_needs[lieferant].add("ZM")
+                        reporting_needs[kunde].add("ZM (Dreieck)")
+                    # Andere IG Lieferungen im (fälschlich erkannten) Dreieck? -> Normale ZM
+                    elif len(firmen) == 3:  # Nur zur Sicherheit
+                        reporting_needs[lieferant].add("ZM")
 
-            # Intrastat Versendung (Dispatch)
-            if lief.potential_intrastat_dispatch:
-                # Im Dreieck meldet oft nur B die Versendung (vereinfacht: Lieferant der bewegten Lief.)
-                reporting_needs[lieferant].add("Intrastat Versendung")
+                else:  # Kein Dreieck
+                    reporting_needs[lieferant].add("ZM")
 
-            # Intrastat Eingang (Arrival)
-            if lief.potential_intrastat_arrival:
-                # Im Dreieck meldet C den Eingang (vereinfacht: Kunde der bewegten Lief.)
-                reporting_needs[kunde].add("Intrastat Eingang")
+                # Intrastat (nur bei der bewegten IG Lieferung)
+                if lief.is_moved_supply:
+                    # Lieferant meldet Versendung aus dem Abgangsland (place)
+                    reporting_needs[lieferant].add("Intrastat Versendung")
+                    # Kunde meldet Eingang im Bestimmungsland (end_country)
+                    # Im Dreieck ist der Kunde der bewegten Lieferung (A->B) der B,
+                    # aber der tatsächliche Empfänger (C) meldet den Eingang.
+                    if is_triangle and len(firmen) == 3:
+                        final_customer = firmen[2]
+                        reporting_needs[final_customer].add("Intrastat Eingang")
+                    else:
+                        reporting_needs[kunde].add("Intrastat Eingang")
+
+            # Intrastat kann auch bei anderen grenzüberschreitenden Warenbewegungen
+            # relevant sein (z.B. Verbringen), wird hier aber vereinfacht nur
+            # an die bewegte IG Lieferung gekoppelt.
 
         return reporting_needs
 
