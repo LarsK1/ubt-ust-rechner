@@ -27,6 +27,7 @@ def helper_switch_page(page, options):
 
 def Eingabe_1():
     laender_firmen: list[Handelsstufe] = []
+    show_next_steps = False
 
     # Liste der verfügbaren Länder auf Deutsch
     laender = get_countries()
@@ -36,219 +37,372 @@ def Eingabe_1():
         mode="sticky", position="top", border=True, margin="0px"
     )
 
-    with st.expander("Grundlegende Daten"):
+    with st.expander(
+        "Grundlegende Daten", expanded=True
+    ):  # Standardmäßig geöffnet für bessere UX
         st.subheader("Schritt 1: Anzahl der beteiligten Firmen")
         # Anzahl der beteiligten Firmen festlegen
         anzahl_firmen = st.number_input(
-            "Anzahl der beteiligten Firmen:", min_value=1, step=1, value=3
+            "Anzahl der beteiligten Firmen:",
+            min_value=2,
+            step=1,
+            value=3,  # Min_value auf 2 gesetzt
         )
-        if "anzahl_firmen_saved" not in st.session_state:
+        # --- Session State Management für Anzahl und Länder ---
+        if (
+            "anzahl_firmen_saved" not in st.session_state
+            or anzahl_firmen != st.session_state.get("anzahl_firmen_saved")
+        ):
             st.session_state["anzahl_firmen_saved"] = anzahl_firmen
-            st.session_state["firmenland"] = []
-            for i in range(anzahl_firmen):
-                st.session_state["firmenland"].append(randrange(0, len(laender)))
-        else:
-            if anzahl_firmen != st.session_state["anzahl_firmen_saved"]:
-                st.session_state["firmenland"] = []
-                for i in range(anzahl_firmen):
-                    st.session_state["firmenland"].append(randrange(0, len(laender)))
-                st.session_state["anzahl_firmen_saved"] = anzahl_firmen
-        if anzahl_firmen > 2:
-            st.divider()
-            # Länderauswahl für jede Firma
-            if anzahl_firmen:
-                st.subheader("Schritt 2: Firmensitz")
-                for i in range(int(anzahl_firmen)):
-                    if i == 0:
-                        land = st.selectbox(
-                            f"Verkäufer:",
-                            laender,
-                            key=f"firma_{i}",
-                            index=st.session_state["firmenland"][i],
-                        )
-                    elif i == anzahl_firmen - 1:
-                        land = st.selectbox(
-                            f"Empfänger:",
-                            laender,
-                            key=f"firma_{i}",
-                            index=st.session_state["firmenland"][i],
-                        )
-                    else:
-                        land = st.selectbox(
-                            f"Zwischenhändler {i}:",
-                            laender,
-                            key=f"firma_{i}",
-                            index=st.session_state["firmenland"][i],
-                        )
-                    laender_firmen.append(Handelsstufe(land, i, int(anzahl_firmen)))
-                for i, land in enumerate(laender_firmen):
-                    land: Handelsstufe
-                    if i == 0:
-                        land.add_next_company_to_chain(land, laender_firmen[i + 1])
-                    elif i == int(anzahl_firmen) - 1:
-                        land.add_previous_company_to_chain(land, laender_firmen[i - 1])
-                    else:
-                        land.add_previous_company_to_chain(land, laender_firmen[i - 1])
-                        land.add_next_company_to_chain(land, laender_firmen[i + 1])
-                st.divider()
-                # Ausgabe der ausgewählten Länder
-                if len(laender_firmen) > 0:
-                    st.subheader("Schritt 3: Besondere Merkmale der EU-Firmen")
-                    if not any(
-                        laender_firmen[i].country.EU is True
-                        for i in range(len(laender_firmen))
-                    ):
-                        st.warning(
-                            "Alle Firmen sind außerhalb der EU ansässig. Eine Nuztung einer abweichenden USt-ID ist nur in Europa möglich."
-                        )
-                    else:
-                        for i, land in enumerate(laender_firmen):
-                            land: Handelsstufe
-                            if not land.country.EU:
-                                continue
-                            container_land = st.container(border=True)
-                            coulumn1, column2 = container_land.columns(
-                                (
-                                    1,
-                                    8,
-                                )
-                            )
-                            if land.country.flag:
-                                coulumn1.image(land.country.flag, width=100)
+            st.session_state["firmenland_indices"] = [
+                randrange(0, len(laender)) for _ in range(anzahl_firmen)
+            ]
+            # Reset other relevant states if number changes
+            st.session_state.pop("abweichende_ust_ids", None)
+            st.session_state.pop("transport_firma_index", None)
+            st.session_state.pop("intermediary_status", None)
+            st.session_state.pop("customs_export_index", None)
+            st.session_state.pop("customs_import_vat_index", None)
 
-                            if i == 0:
-                                column2.write(
-                                    f"**Verkäufer: {land.country.name} - {'EU' if land.country.EU else 'Drittland'}**"
-                                )
-                            elif i == int(anzahl_firmen) - 1:
-                                column2.write(
-                                    f"**Empfänger: {land.country.name} - {'EU' if land.country.EU else 'Drittland'}**"
-                                )
-                            else:
-                                column2.write(
-                                    f"**Zwischenhändler {i}: {land.country.name} - {'EU' if land.country.EU else 'Drittland'}**"
-                                )
-                            ust = column2.checkbox(
-                                "Vom Heimatland abweichende USt-ID",
-                                key=f"abweichende_ust_id_{i}",
-                            )
-                            if ust:
-                                laender_ohne_eigenes = [
-                                    l
-                                    for l in laender
-                                    if l.code != land.country.code and l.EU is True
-                                ]
-                                target_country_vat_id = column2.selectbox(
-                                    f"Land der verwendeten USt-ID:",
-                                    laender_ohne_eigenes,
-                                    key=f"land_abweichende_ust_id_{i}",
-                                )
-                                land.set_changed_vat_id(target_country_vat_id)
-                schritt = 1
+        # --- Länderauswahl (Schritt 2) ---
+        if anzahl_firmen >= 2:  # Mindestens 2 Firmen für ein Geschäft
+            st.divider()
+            st.subheader("Schritt 2: Firmensitz")
+            selected_countries = []
+            for i in range(anzahl_firmen):
+                role = (
+                    "Verkäufer"
+                    if i == 0
+                    else (
+                        "Empfänger"
+                        if i == anzahl_firmen - 1
+                        else f"Zwischenhändler {i}"
+                    )
+                )
+                # Verwende gespeicherte Indizes für Konsistenz
+                selected_country = st.selectbox(
+                    f"{role}:",
+                    laender,
+                    key=f"firma_{i}",
+                    index=st.session_state["firmenland_indices"][i],
+                    format_func=lambda c: f"{c.name} ({c.code}){' - EU' if c.EU else ''}",  # Bessere Anzeige
+                )
+                selected_countries.append(selected_country)
+                # Update session state index if changed by user
+                st.session_state["firmenland_indices"][i] = laender.index(
+                    selected_country
+                )
+
+            # Erstelle Handelsstufen-Objekte
+            laender_firmen = [
+                Handelsstufe(country, i, anzahl_firmen)
+                for i, country in enumerate(selected_countries)
+            ]
+
+            # Verknüpfe die Kette
+            for i, firma in enumerate(laender_firmen):
+                if i > 0:
+                    firma.add_previous_company_to_chain(firma, laender_firmen[i - 1])
+                if i < anzahl_firmen - 1:
+                    firma.add_next_company_to_chain(firma, laender_firmen[i + 1])
+
+            # --- NEU: Prüfung auf mindestens ein EU-Land ---
+            at_least_one_eu = any(f.country.EU for f in laender_firmen)
+            if not at_least_one_eu and anzahl_firmen > 0:
+                st.warning(
+                    "Bitte wählen Sie mindestens eine Firma mit Sitz in der EU aus, um umsatzsteuerliche EU-Regeln anwenden zu können.",
+                    icon="🇪🇺",
+                )
+                show_next_steps = False
+            elif anzahl_firmen < 3:
+                st.warning(
+                    "Ein Reihengeschäft im umsatzsteuerlichen Sinne erfordert mindestens drei beteiligte Firmen.",
+                    icon="⚠️",
+                )
+                show_next_steps = False  # Reihengeschäft-spezifische Logik erst ab 3
             else:
-                schritt = 0
-        elif anzahl_firmen == 2:
+                show_next_steps = True  # Voraussetzung für nächste Schritte erfüllt
+
+            # --- Besondere Merkmale (Schritt 3) ---
+            if show_next_steps:  # Nur anzeigen, wenn mind. 1 EU-Land und >= 3 Firmen
+                st.divider()
+                st.subheader("Schritt 3: Besondere Merkmale der EU-Firmen")
+                # Initialisiere Session State für Checkboxen, falls nicht vorhanden
+                if "abweichende_ust_ids" not in st.session_state:
+                    st.session_state["abweichende_ust_ids"] = {}
+
+                for i, firma in enumerate(laender_firmen):
+                    if not firma.country.EU:
+                        continue  # Nur für EU-Firmen relevant
+
+                    container_land = st.container(border=True)
+                    col1, col2 = container_land.columns((1, 8))
+                    if firma.country.flag:
+                        col1.image(firma.country.flag, width=60)  # Etwas kleiner
+
+                    role_name = firma.get_role_name(True)
+                    col2.write(f"**{role_name}: {firma.country.name} - EU**")
+
+                    # Verwende Session State für Checkbox-Status
+                    ust_key = f"abweichende_ust_id_{i}"
+                    ust_checked = col2.checkbox(
+                        "Vom Heimatland abweichende USt-ID verwenden?",
+                        key=ust_key,
+                        value=st.session_state["abweichende_ust_ids"].get(
+                            ust_key, False
+                        ),
+                    )
+                    st.session_state["abweichende_ust_ids"][
+                        ust_key
+                    ] = ust_checked  # Status speichern
+
+                    if ust_checked:
+                        laender_ohne_eigenes = [
+                            l for l in laender if l.code != firma.country.code and l.EU
+                        ]
+                        if laender_ohne_eigenes:  # Nur anzeigen, wenn Auswahl möglich
+                            target_country_vat_id = col2.selectbox(
+                                f"Land der verwendeten USt-ID:",
+                                laender_ohne_eigenes,
+                                key=f"land_abweichende_ust_id_{i}",
+                                format_func=lambda c: f"{c.name} ({c.code})",  # Bessere Anzeige
+                            )
+                            firma.set_changed_vat_id(target_country_vat_id)
+                        else:
+                            col2.warning(
+                                "Keine anderen EU-Länder zur Auswahl verfügbar."
+                            )
+                            # Reset state if checkbox is unchecked or no options
+                            firma.set_changed_vat_id(None)
+                    else:
+                        # Reset state if checkbox is unchecked
+                        firma.set_changed_vat_id(None)
+
+                schritt = 1  # Schritt 1 (Daten) abgeschlossen, wenn wir hier sind
+            else:
+                schritt = 0  # Bedingungen für nächste Schritte nicht erfüllt
+        else:
+            # Weniger als 2 Firmen
+            st.error("Ein Handelsgeschäft benötigt mindestens zwei beteiligte Firmen.")
             schritt = 0
-            st.warning("Ein Reihengeschäft benötigt mindestens drei beteiligte Firmen.")
-        elif anzahl_firmen < 2:
-            schritt = 0
-            st.error("Ein Handelsgeschäft benötigt mind. zwei beteiligte Firmen.")
-    if schritt == 1:
-        endanalyse_benötigte_daten = False
-        with st.expander("Lieferung / Zollabwicklung"):
+
+    # --- Lieferung / Zollabwicklung (Schritte 4, 5, NEU 5b) ---
+    # Nur anzeigen, wenn Schritt 1 abgeschlossen und Bedingungen erfüllt
+    if schritt == 1 and show_next_steps:
+        endanalyse_benötigte_daten = False  # Reset für diesen Abschnitt
+        with st.expander(
+            "Lieferung / Zollabwicklung", expanded=True
+        ):  # Standardmäßig geöffnet
             st.subheader("Schritt 4: Lieferung")
-            transport_firma: Handelsstufe | str = st.selectbox(
+
+            # Verwende Index im Session State für Transporteur
+            transport_options = ["keine Auswahl"] + laender_firmen
+            default_transport_index = st.session_state.get("transport_firma_index", 0)
+            selected_transport_index = st.selectbox(
                 "Welche Firma transportiert die Ware / veranlasst den Transport?",
-                ["keine Auswahl"] + laender_firmen,
+                range(len(transport_options)),  # Arbeite mit Indizes
+                index=default_transport_index,
+                format_func=lambda idx: str(
+                    transport_options[idx]
+                ),  # Zeige Firmennamen an
+                key="transport_select",
             )
+            st.session_state["transport_firma_index"] = (
+                selected_transport_index  # Index speichern
+            )
+            transport_firma = transport_options[selected_transport_index]
+
+            # Setze responsible_for_shippment basierend auf Auswahl
+            is_transport_selected = False
             if isinstance(transport_firma, Handelsstufe):
+                is_transport_selected = True
                 for firma in laender_firmen:
-                    if firma.identifier == transport_firma.identifier:
-                        firma.responsible_for_shippment = True
-                        endanalyse_benötigte_daten = True
-                        st.warning(
-                            "Die transportierende Firma wird im Chart orange dargestellt.",
-                            icon="✅",
-                        )
-                        break
-            if (
-                transport_firma != "keine Auswahl"
-                and "Z" in transport_firma.get_role_name()
-            ):
+                    firma.responsible_for_shippment = (
+                        firma.identifier == transport_firma.identifier
+                    )
+                st.success(f"Transport durch: **{transport_firma}**", icon="🚚")
+            else:
+                # Reset für alle, wenn "keine Auswahl"
+                for firma in laender_firmen:
+                    firma.responsible_for_shippment = False
+
+            # Status des Zwischenhändlers (wenn ZH transportiert)
+            is_intermediary_status_set = False
+            if is_transport_selected and "Z" in transport_firma.get_role_name():
                 st.info(
-                    f"Da der {transport_firma.get_role_name(True)} den Transport beauftragt, ist sein Status relevant.",
+                    f"Da der {transport_firma.get_role_name(True)} transportiert, ist sein Status relevant.",
                     icon="ℹ️",
                 )
-                intermediar = st.selectbox(
-                    "Status",
-                    [
-                        "keine Auswahl",
-                        "Abnehmer",
-                        "Lieferer",
-                    ],
+                intermediary_options = ["keine Auswahl", "Abnehmer", "Lieferer"]
+                default_intermediary_index = st.session_state.get(
+                    "intermediary_status_index", 0
                 )
-                if intermediar != "keine Auswahl":
-                    for firma in laender_firmen:
-                        if firma.identifier == transport_firma.identifier:
-                            match intermediar:
-                                case "Abnehmer":
-                                    firma.intermediary_status = IntermediaryStatus.BUYER
-                                    endanalyse_benötigte_daten = True
-                                case "Lieferer":
-                                    firma.intermediary_status = (
-                                        IntermediaryStatus.SUPPLIER
-                                    )
-                                    endanalyse_benötigte_daten = True
-                                case _:
-                                    raise ValueError("Unbekannter Intermediary Status")
-                            break
-                else:
-                    endanalyse_benötigte_daten = False
+                selected_intermediary_index = st.selectbox(
+                    "Status des transportierenden Zwischenhändlers:",
+                    range(len(intermediary_options)),
+                    index=default_intermediary_index,
+                    format_func=lambda idx: intermediary_options[idx],
+                    key="intermediary_select",
+                )
+                st.session_state["intermediary_status_index"] = (
+                    selected_intermediary_index
+                )
+                intermediar_status_str = intermediary_options[
+                    selected_intermediary_index
+                ]
 
-            customs_necessary = all(
-                laender_firmen[i].country.EU for i in range(len(laender_firmen))
-            )
-            if not customs_necessary:
+                # Setze Status im Objekt
+                status_to_set = None
+                if intermediar_status_str == "Abnehmer":
+                    status_to_set = IntermediaryStatus.BUYER
+                    is_intermediary_status_set = True
+                elif intermediar_status_str == "Lieferer":
+                    status_to_set = IntermediaryStatus.SUPPLIER
+                    is_intermediary_status_set = True
+
+                # Finde die transportierende Firma erneut und setze Status
+                for firma in laender_firmen:
+                    if firma.identifier == transport_firma.identifier:
+                        firma.intermediary_status = status_to_set
+                        break
+            else:
+                # Wenn kein ZH transportiert oder keine Auswahl, Status für alle resetten
+                for firma in laender_firmen:
+                    firma.intermediary_status = None
+                # Wenn ZH transportiert, aber Status "keine Auswahl", ist Bedingung nicht erfüllt
+                is_intermediary_status_set = not (
+                    is_transport_selected and "Z" in transport_firma.get_role_name()
+                )
+
+            # --- Zollabwicklung (Schritt 5 & NEU 5b) ---
+            customs_necessary = not all(f.country.EU for f in laender_firmen)
+            is_customs_export_set = True  # Standardmäßig True, wenn nicht notwendig
+            is_customs_import_vat_set = True  # Standardmäßig True, wenn nicht notwendig
+
+            if customs_necessary:
                 st.divider()
-                st.subheader("Schritt 5: Zollabwicklung")
-
-                customs_import = st.selectbox(
-                    "Wer übernimmt die Zollabwicklung?",
-                    ["keine Auswahl"] + laender_firmen,
+                st.subheader("Schritt 5: Zollabwicklung (Export)")
+                customs_export_options = ["keine Auswahl"] + laender_firmen
+                default_export_index = st.session_state.get("customs_export_index", 0)
+                selected_export_index = st.selectbox(
+                    "Wer übernimmt die Zollabwicklung beim Export?",
+                    range(len(customs_export_options)),
+                    index=default_export_index,
+                    format_func=lambda idx: str(customs_export_options[idx]),
+                    key="customs_export_select",
                 )
-                if isinstance(customs_import, Handelsstufe):
+                st.session_state["customs_export_index"] = selected_export_index
+                customs_export_firma = customs_export_options[selected_export_index]
+
+                # Setze responsible_for_customs
+                is_customs_export_set = False
+                if isinstance(customs_export_firma, Handelsstufe):
+                    is_customs_export_set = True
                     for firma in laender_firmen:
-                        if firma.identifier == customs_import.identifier:
-                            firma.responsible_for_customs = True
-                            endanalyse_benötigte_daten = True
-                            st.success(
-                                "Die Zoll abwickelnde Firma wird im Chart grün dargestellt.",
-                                icon="✅",
-                            )
-                            break
+                        firma.responsible_for_customs = (
+                            firma.identifier == customs_export_firma.identifier
+                        )
+                    st.success(
+                        f"Export-Zoll durch: **{customs_export_firma}**", icon="🛂"
+                    )
                 else:
-                    endanalyse_benötigte_daten = False
+                    for firma in laender_firmen:
+                        firma.responsible_for_customs = False
+
+                # --- NEU: Schritt 5b: Einfuhrumsatzsteuer ---
+                st.subheader("Schritt 5b: Einfuhrumsatzsteuer (EUSt)")
+                st.info(
+                    "Wer meldet die Einfuhr an und schuldet die Einfuhrumsatzsteuer im Bestimmungsland?",
+                    icon="🇪🇺",
+                )
+                customs_import_vat_options = ["keine Auswahl"] + laender_firmen
+                default_import_vat_index = st.session_state.get(
+                    "customs_import_vat_index", 0
+                )
+                selected_import_vat_index = st.selectbox(
+                    "Wer ist für die Einfuhrumsatzsteuer verantwortlich?",
+                    range(len(customs_import_vat_options)),
+                    index=default_import_vat_index,
+                    format_func=lambda idx: str(customs_import_vat_options[idx]),
+                    key="customs_import_vat_select",
+                )
+                st.session_state["customs_import_vat_index"] = selected_import_vat_index
+                customs_import_vat_firma = customs_import_vat_options[
+                    selected_import_vat_index
+                ]
+
+                # Setze responsible_for_import_vat (Annahme: Attribut existiert in Handelsstufe)
+                is_customs_import_vat_set = False
+                if isinstance(customs_import_vat_firma, Handelsstufe):
+                    is_customs_import_vat_set = True
+                    for firma in laender_firmen:
+                        # Stelle sicher, dass das Attribut existiert
+                        if not hasattr(firma, "responsible_for_import_vat"):
+                            firma.responsible_for_import_vat = False  # Initialisieren
+                        firma.responsible_for_import_vat = (
+                            firma.identifier == customs_import_vat_firma.identifier
+                        )
+                    st.success(
+                        f"EUSt-Anmeldung durch: **{customs_import_vat_firma}**",
+                        icon="💶",
+                    )
+                else:
+                    for firma in laender_firmen:
+                        if hasattr(firma, "responsible_for_import_vat"):
+                            firma.responsible_for_import_vat = False
+
+            # --- Analyse-Button (Schritt 6) ---
+            # Alle Bedingungen prüfen
+            endanalyse_benötigte_daten = (
+                is_transport_selected
+                and is_intermediary_status_set
+                and is_customs_export_set
+                and is_customs_import_vat_set
+            )
 
             if endanalyse_benötigte_daten:
                 st.divider()
                 st.subheader("Schritt 6: Analyse")
-                st.text(
-                    "Vielen Dank. Nun sind alle Daten erfasst um den Sachverhalt korrekt berechnen zu können."
+                st.success(
+                    "Alle notwendigen Daten sind erfasst. Sie können die Analyse starten.",
+                    icon="✅",
                 )
                 st.button(
-                    "Analyse starten.",
+                    "Analyse starten",
                     icon="🛫",
                     on_click=helper_switch_page,
                     args=(1, laender_firmen),
+                    use_container_width=True,  # Button über volle Breite
                 )
+            else:
+                # Zeige an, was noch fehlt
+                missing_data = []
+                if not is_transport_selected:
+                    missing_data.append("Transporteur auswählen (Schritt 4)")
+                if not is_intermediary_status_set:
+                    missing_data.append(
+                        "Status des transportierenden Zwischenhändlers auswählen (Schritt 4)"
+                    )
+                if not is_customs_export_set:
+                    missing_data.append("Export-Zollabwickler auswählen (Schritt 5)")
+                if not is_customs_import_vat_set:
+                    missing_data.append(
+                        "Verantwortlichen für EUSt auswählen (Schritt 5b)"
+                    )
 
-    if len(laender_firmen) > 2:
-        diagram.subheader("Geschäftsablauf")
+                if missing_data:
+                    st.divider()
+                    st.subheader("Schritt 6: Analyse")
+                    st.warning(
+                        f"Bitte vervollständigen Sie die Eingaben: {', '.join(missing_data)}.",
+                        icon="❗",
+                    )
+
+    # --- Diagramm (immer anzeigen, wenn Kette existiert) ---
+    if len(laender_firmen) >= 2:  # Mindestens 2 Firmen für Diagramm
+        diagram.subheader("Geschäftsablauf (Eingabeübersicht)")
         transaction = Transaktion(laender_firmen[0], laender_firmen[-1])
-        dot = Digraph(
-            comment="Geschäftsablauf", graph_attr={"rankdir": "LR"}
-        )  # LR für Left-to-Right-Layout
-        # dot.attr(splines="ortho")
+        dot = Digraph(comment="Geschäftsablauf", graph_attr={"rankdir": "LR"})
         with dot.subgraph() as s:
             s.attr("node", shape="box")
             for company in transaction.get_ordered_chain_companies():
@@ -256,7 +410,7 @@ def Eingabe_1():
                 # Zusatzinfos: Abw. USt-ID und Status
                 zusatz_infos = []
                 if company.changed_vat and company.new_country:
-                    zusatz_infos.append(f"abw. USt-ID: {company.new_country.code}\n")
+                    zusatz_infos.append(f"USt-ID: {company.new_country.code}")
                 if company.intermediary_status is not None:
                     zusatz_infos.append(
                         f"Status: {company.get_intermideary_status()}\n"
@@ -266,33 +420,33 @@ def Eingabe_1():
                     company_text += "\n" + "".join(zusatz_infos)
                 else:
                     company_text += "\n--------\n "  # Minimaler Platzhalter für Höhe
-                company_text += f"{company.country.name}({company.country.code})"
+                company_text += f"{company.country.name} ({company.country.code})"
                 if company.country.EU:
                     company_text += ", EU"
                 else:
-                    company_text += ", Drittland"
-                # Farbliche Markierung (Transporteur/Zoll)
-                fillcolor = ""
-                if (
-                    company.responsible_for_shippment
-                    and company.responsible_for_customs
-                ):
-                    fillcolor = "#ffa500:#b2d800"  # Orange/Grün Gradient
-                elif company.responsible_for_shippment:
-                    fillcolor = "#ffa500"  # Orange
-                elif company.responsible_for_customs:
-                    fillcolor = "#b2d800"  # Grün
+                    # Kleinerer Platzhalter oder ganz weglassen
+                    company_text += "\n"  # Minimaler Abstand
 
-                if fillcolor:
-                    s.node(
-                        str(company.identifier),
-                        company_text,
-                        style="filled",
-                        fillcolor=fillcolor,
-                    )
-                else:
-                    s.node(str(company.identifier), company_text)
+                # Farbliche Markierung (Transporteur/Zoll/EUSt)
+                colors = []
+                if company.responsible_for_shippment:
+                    colors.append("#ffa500")  # Orange für Transport
+                if company.responsible_for_customs:
+                    colors.append("#b2d800")  # Grün für Export-Zoll
+                if company.responsible_for_import_vat:
+                    colors.append("#add8e6")  # Hellblau für EUSt
 
+                node_attrs = {}
+                if colors:
+                    node_attrs["style"] = "filled"
+                    if len(colors) > 1:
+                        node_attrs["fillcolor"] = ":".join(colors)  # Gradient
+                    else:
+                        node_attrs["fillcolor"] = colors[0]
+
+                s.node(str(company.identifier), company_text, **node_attrs)
+
+        # Kanten für Rechnung/Bestellung/Transport
         for company in laender_firmen:
             if company.next_company:
                 dot.edge(
@@ -338,7 +492,6 @@ def Analyse_1():
         try:
             # Berechnung durchführen (nur einmal)
             alle_lieferungen: list[Lieferung] = transaction.calculate_delivery_and_vat()
-            st.subheader("Visualisierung: Lieferungen & Rechnungen")
             dot_analyse = Digraph(
                 comment="Analyse Reihengeschäft", graph_attr={"rankdir": "LR"}
             )
@@ -363,6 +516,7 @@ def Analyse_1():
                     lief.invoice_note
                     and "Steuerfrei" not in lief.invoice_note
                     and "Reverse Charge" not in lief.invoice_note
+                    and "Nicht steuerbar" not in lief.invoice_note
                 ):
                     rechnungs_label += f"\n({lief.invoice_note})"
 
@@ -377,7 +531,7 @@ def Analyse_1():
 
                 # --- Kante für Ruhende Lieferung ---
                 if not lief.is_moved_supply:
-                    ruhend_label = f"Ruhende Lieferung\nOrt: {lief.place_of_supply.code if lief.place_of_supply else '?'}"
+                    ruhend_label = f"ruhende Lieferung\nOrt: {lief.place_of_supply.code if lief.place_of_supply else '?'}"
                     dot_analyse.edge(
                         str(lief.lieferant.identifier),
                         str(lief.kunde.identifier),
@@ -393,7 +547,7 @@ def Analyse_1():
 
             # 3. Kante für die RECHTLICH bewegte Lieferung (BLAU)
             if bewegte_lieferung_gefunden:
-                bewegte_label = f"Bewegte Lieferung\nOrt: {bewegte_lieferung_gefunden.place_of_supply.code if bewegte_lieferung_gefunden.place_of_supply else '?'}"
+                bewegte_label = f"bewegte Lieferung\nOrt: {bewegte_lieferung_gefunden.place_of_supply.code if bewegte_lieferung_gefunden.place_of_supply else '?'}"
                 dot_analyse.edge(
                     # Von Lieferant zu Kunde DIESER Lieferung
                     str(bewegte_lieferung_gefunden.lieferant.identifier),
@@ -407,7 +561,7 @@ def Analyse_1():
 
             # 4. Kante für den PHYSISCHEN Transportweg (GRÜN)
             if transaction.shipping_company:  # Nur wenn ein Transporteur bekannt ist
-                transport_label = f"Physischer Transport\ndurch: {transaction.shipping_company.get_role_name(True)}"
+                transport_label = f"physischer Transport\ndurch {transaction.shipping_company.get_role_name(True)}"
                 dot_analyse.edge(
                     # Von erster zu letzter Firma
                     str(transaction.start_company.identifier),

@@ -47,6 +47,7 @@ class Handelsstufe:
         self.country = country
         self.responsible_for_shippment = False
         self.responsible_for_customs = False
+        self.responsible_for_import_vat: bool = False
         self.next_company: [Handelsstufe] = None  # Type Hint hinzugefügt
         self.previous_company: [Handelsstufe] = None  # Type Hint hinzugefügt
         self.intermediary_status: IntermediaryStatus | None = None
