@@ -17,6 +17,7 @@ IT = Country("Italien", "IT")
 PL = Country("Polen", "PL")
 CH = Country("Schweiz", "CH")
 US = Country("USA", "US")
+CN = Country("China", "CN")
 
 # Mapping von Ländercodes zu Objekten für einfachen Zugriff in Tests
 COUNTRIES = {
@@ -27,6 +28,7 @@ COUNTRIES = {
     "CH": CH,
     "US": US,
     "IT": IT,
+    "CN": CN,
 }
 
 # --- Testdaten-Struktur ---
@@ -303,7 +305,7 @@ TEST_SCENARIOS = [
             2: {"IT"},  # C nur in IT
         },
     },
-    # --- NEU: Szenario 6: DE -> AT -> IT, A transportiert (Dreieck) ---
+    # --- Szenario 6: DE -> AT -> IT, A transportiert (Dreieck) ---
     {
         "description": "DE -> AT -> IT (Dreieck), A transportiert",
         "companies": [
@@ -357,7 +359,7 @@ TEST_SCENARIOS = [
             2: {"IT"},
         },
     },
-    # --- Szenario 7: DE -> AT -> IT, B transportiert als Abnehmer ---
+    # --- Szenario 7: DE -> AT -> IT, B transportiert als Abnehmer (Dreieck) ---
     {
         "description": "DE -> AT -> IT, B transportiert als Abnehmer",
         "companies": [
@@ -470,6 +472,235 @@ TEST_SCENARIOS = [
             2: {"IT"},  # C braucht IT (home)
         },
     },
+    # --- Szenario 9 (NEU): DE -> CN -> CN, A transportiert & Export ---
+    {
+        "description": "DE -> CN -> CN, A transportiert & Export",
+        "companies": [
+            {
+                "id": 0,
+                "country_code": "DE",
+                "ship": True,  # A transportiert
+                "customs": True,  # A macht Export-Zoll
+                "import_vat": False,
+                "vat_change_code": None,
+                "intermediary_status": None,
+            },
+            {
+                "id": 1,
+                "country_code": "CN",
+                "ship": False,
+                "customs": False,
+                "import_vat": False,
+                "vat_change_code": None,
+                "intermediary_status": None,
+            },
+            {
+                "id": 2,
+                "country_code": "CN",
+                "ship": False,
+                "customs": False,
+                "import_vat": False,
+                "vat_change_code": None,
+                "intermediary_status": None,
+            },
+        ],
+        "expected_deliveries": [
+            # A -> B: Bewegt, Ort DE, Steuerfrei Export
+            {
+                "from": 0,
+                "to": 1,
+                "moved": True,
+                "place": "DE",
+                "vat": VatTreatmentType.EXEMPT_EXPORT,
+            },
+            # B -> C: Ruhend, Ort CN, Nicht EU-Steuerbar
+            {
+                "from": 1,
+                "to": 2,
+                "moved": False,
+                "place": "CN",
+                "vat": VatTreatmentType.OUT_OF_SCOPE,  # Eigentlich in CN steuerbar
+            },
+        ],
+        "expected_triangle": False,
+        "expected_registrations": {
+            0: {"DE"},  # A braucht DE (Export)
+            1: set(),  # B (CN) braucht keine EU-Reg.
+            2: set(),  # C (CN) braucht keine EU-Reg.
+        },
+    },
+    # --- Szenario 10: DE -> CN -> CN, B transportiert als Abnehmer & Export ---
+    {
+        "description": "DE -> CN -> CN, B transportiert als Abnehmer & Export",
+        "companies": [
+            {
+                "id": 0,
+                "country_code": "DE",
+                "ship": False,
+                "customs": True,
+                "import_vat": False,
+                "vat_change_code": None,
+                "intermediary_status": None,
+            },
+            {
+                "id": 1,
+                "country_code": "CN",
+                "ship": True,  # B transportiert
+                "customs": False,
+                "import_vat": False,
+                "vat_change_code": None,
+                "intermediary_status": IntermediaryStatus.BUYER,  # als Abnehmer
+            },
+            {
+                "id": 2,
+                "country_code": "CN",
+                "ship": False,
+                "customs": False,
+                "import_vat": False,
+                "vat_change_code": None,
+                "intermediary_status": None,
+            },
+        ],
+        "expected_deliveries": [
+            # A -> B: Bewegte Lieferung, steuerbar in DE
+            {
+                "from": 0,
+                "to": 1,
+                "moved": True,
+                "place": "DE",
+                "vat": VatTreatmentType.EXEMPT_EXPORT,
+            },
+            # B -> C: Ruhende Lieferung, Ort CN, in CN steuerbar
+            {
+                "from": 1,
+                "to": 2,
+                "moved": False,
+                "place": "CN",
+                "vat": VatTreatmentType.OUT_OF_SCOPE,  #  eigentlich in CN steuerbar
+            },
+        ],
+        "expected_triangle": False,
+        "expected_registrations": {
+            0: {"DE"},  # A braucht DE (Lieferung in DE)
+            1: set(),  # B (CN) braucht keine EU-Reg.
+            2: set(),  # C (CN) braucht keine EU-Reg.
+        },
+    },
+    # --- Szenario 15 (NEU): DE -> DE -> CN, B(FR-ID) transportiert als Abnehmer & Export ---
+    {
+        "description": "DE -> DE -> CN, B(FR-ID) transportiert als Abnehmer & Export",
+        "companies": [
+            {
+                "id": 0,
+                "country_code": "DE",
+                "ship": False,
+                "customs": False,
+                "import_vat": False,
+                "vat_change_code": None,
+                "intermediary_status": None,
+            },
+            {
+                "id": 1,
+                "country_code": "DE",  # B sitzt in DE
+                "ship": True,  # B transportiert
+                "customs": True,  # B macht Export-Zoll
+                "import_vat": False,
+                "vat_change_code": "FR",  # B nutzt FR USt-ID
+                "intermediary_status": IntermediaryStatus.BUYER,  # als Abnehmer
+            },
+            {
+                "id": 2,
+                "country_code": "CN",
+                "ship": False,
+                "customs": False,
+                "import_vat": False,
+                "vat_change_code": None,
+                "intermediary_status": None,
+            },
+        ],
+        "expected_deliveries": [
+            # A -> B: Bewegte Lieferung, Ort DE, IG-Lieferung an FR
+            {
+                "from": 0,
+                "to": 1,
+                "moved": True,
+                "place": "DE",
+                "vat": VatTreatmentType.EXEMPT_EXPORT,
+            },
+            # B -> C: Ruhende Lieferung, Ort DE, Steuerfrei Export
+            {
+                "from": 1,
+                "to": 2,
+                "moved": False,
+                "place": "CN",
+                "vat": VatTreatmentType.OUT_OF_SCOPE,
+            },
+        ],
+        "expected_triangle": False,
+        "expected_registrations": {
+            0: {"DE"},  # A braucht DE
+            1: {"DE", "FR"},  # B braucht DE (home, Export) und FR (USt-ID Nutzung)
+            2: set(),  # C (CN) braucht keine EU-Reg.
+        },
+    },
+    # --- Szenario 11: CN -> DE -> DE, A transportiert, A macht EUSt ---
+    # (§ 3 Abs. 8 UStG sollte greifen -> Lieferort A->B wird DE)
+    {
+        "description": "CN -> DE -> DE, A transportiert, A macht EUSt",
+        "companies": [
+            {
+                "id": 0,
+                "country_code": "CN",
+                "ship": True,  # A transportiert
+                "customs": False,  # Export CH nicht relevant für EU-USt
+                "import_vat": True,  # A macht EUSt in DE
+                "vat_change_code": None,
+                "intermediary_status": None,
+            },
+            {
+                "id": 1,
+                "country_code": "DE",
+                "ship": False,
+                "customs": False,
+                "import_vat": False,
+                "vat_change_code": None,
+                "intermediary_status": None,
+            },
+            {
+                "id": 2,
+                "country_code": "DE",
+                "ship": False,
+                "customs": False,
+                "import_vat": False,
+                "vat_change_code": None,
+                "intermediary_status": None,
+            },
+        ],
+        "expected_deliveries": [
+            # A -> B: Bewegt, Ort CH->DE (§3 Abs. 8), Steuerpflichtig DE (RC)
+            {
+                "from": 0,
+                "to": 1,
+                "moved": True,
+                "place": "DE",  # Ort verlagert nach DE
+                "vat": VatTreatmentType.TAXABLE_NORMAL,  # A(CN) an B(DE) in DE -> RC
+            },
+            # B -> C: Ruhend, Ort DE (Ende Transport), Steuerpflichtig DE
+            {
+                "from": 1,
+                "to": 2,
+                "moved": False,
+                "place": "DE",
+                "vat": VatTreatmentType.TAXABLE_NORMAL,  # B(DE) an C(DE) in DE -> Normal
+            },
+        ],
+        "expected_triangle": False,
+        "expected_registrations": {
+            0: {"DE", "CN"},  # A (CN) braucht DE (wegen EUSt und Lieferung in DE)
+            1: {"DE"},  # B braucht DE (für RC-Erwerb und Lieferung B->C)
+            2: {"DE"},  # C braucht DE (home)
+        },
+    },
 ]
 
 
@@ -486,6 +717,7 @@ def create_company_chain(company_configs):
         company.responsible_for_shippment = config["ship"]
         company.responsible_for_customs = config["customs"]
         company.intermediary_status = config["intermediary_status"]
+        company.responsible_for_import_vat = config.get("import_vat", False)
 
         if config["vat_change_code"]:
             company.set_changed_vat_id(COUNTRIES[config["vat_change_code"]])
