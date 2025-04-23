@@ -643,6 +643,12 @@ class Transaktion:
                     registration_needs[kunde].add(
                         place
                     )  # place ist hier das Land der RC-Leistung
+        # --- Zusätzliche Prüfung auf verwendete abweichende USt-IDs ---
+        for firma in firmen:
+            # Wenn eine Firma eine abweichende USt-ID eines EU-Landes verwendet,
+            # muss sie dort registriert sein.
+            if firma.changed_vat and firma.new_country and firma.new_country.EU:
+                registration_needs[firma].add(firma.new_country)
 
         return registration_needs
 
@@ -760,6 +766,34 @@ class Transaktion:
                         raise ValueError(
                             f"Konnte Lieferung vom transportierenden Zwischenhändler {shipping_company} nicht finden."
                         )
+        is_import_case = not start_country.EU and end_country.EU
+        place_shift_applied = False
+        if is_import_case:
+            # Finde die Firma, die für EUSt verantwortlich ist
+            eust_responsible_firma: Handelsstufe | None = None
+            for firma in firmen:
+                if firma.responsible_for_import_vat:
+                    eust_responsible_firma = firma
+                    break
+
+            # Prüfe, ob der Lieferant der bewegten Lieferung für EUSt verantwortlich ist
+            if (
+                eust_responsible_firma
+                and eust_responsible_firma.identifier
+                == bewegte_lieferung_obj.lieferant.identifier
+            ):
+                # Ja, Lieferort der bewegten Lieferung wird ins Einfuhrland verlagert
+                bewegte_lieferung_obj.place_of_supply = end_country
+                place_shift_applied = True
+                print(
+                    f"DEBUG: Lieferortverlagerung nach {end_country.code} für bewegte Lieferung angewendet (§ 3 Abs. 8 UStG)."
+                )  # Debug-Ausgabe
+
+        # Standard-Lieferortzuweisung (wenn keine Verlagerung stattfand)
+        if not place_shift_applied:
+            bewegte_lieferung_obj.place_of_supply = (
+                start_country  # Ort = Beginn Transport
+            )
 
         if not bewegte_lieferung_gefunden or bewegte_lieferung_obj is None:
             # Dieser Fehler sollte durch die obigen Prüfungen eigentlich nicht mehr auftreten
