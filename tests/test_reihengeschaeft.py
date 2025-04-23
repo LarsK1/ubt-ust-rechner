@@ -956,6 +956,68 @@ TEST_SCENARIOS_THREE_COMPANIES = [
             2: set(),
         },
     },
+    # --- Szenario 16: FR -> FR -> DE, A transportiert, B NL-USt-ID
+    {
+        "description": "FR -> FR -> DE A transportiert, B mit NL USt-ID",
+        "companies": [
+            {
+                "id": 0,
+                "country_code": "FR",
+                "ship": True,  # A transportiert
+                "customs": False,
+                "import_vat": False,
+                "vat_change_code": None,
+                "intermediary_status": None,
+            },
+            {
+                "id": 1,
+                "country_code": "FR",
+                "ship": False,
+                "customs": False,
+                "import_vat": False,
+                "vat_change_code": "NL",
+                "intermediary_status": None,
+            },
+            {
+                "id": 2,
+                "country_code": "DE",
+                "ship": False,
+                "customs": False,
+                "import_vat": False,
+                "vat_change_code": None,
+                "intermediary_status": None,
+            },
+        ],
+        "expected_deliveries": [
+            # A -> B: Bewegt (da A transportiert), Ort DE, IG Lieferung
+            {
+                "from": 0,
+                "to": 1,
+                "moved": True,
+                "place": "FR",
+                "vat": VatTreatmentType.EXEMPT_IC_SUPPLY,
+            },
+            # B -> C: Ruhend, Ort DE (Ende = Start), Steuerpflichtig DE
+            {
+                "from": 1,
+                "to": 2,
+                "moved": False,
+                "place": "DE",
+                "vat": VatTreatmentType.TAXABLE_REVERSE_CHARGE,
+            },
+        ],
+        "expected_triangle": True,
+        "expected_registrations": {
+            0: {"FR"},  # A braucht DE
+            1: {"FR", "NL"},  # B braucht DE
+            2: {"DE"},  # C braucht DE
+        },
+        "expected_reporting": {
+            0: {"ZM", "Intrastat Versendung"},  # A: ZM (FR), Intra-V (FR)
+            1: {"ZM (Dreieck)"},  # B: ZM (NL) mit Dreieckskennung
+            2: {"Intrastat Eingang"},  # C: Intra-E (DE)
+        },
+    },
 ]
 TEST_SCENARIOS_FOUR_COMPANIES = [
     # --- Szenario 1: DE -> AT -> PL -> FR, A transportiert ---

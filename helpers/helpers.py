@@ -535,59 +535,109 @@ class Transaktion:
 
     def is_triangular_transaction(self) -> bool:
         """
-        Prüft, ob die Bedingungen für ein (vereinfachtes) Dreiecksgeschäft vorliegen.
-
-        Bedingungen (vereinfacht nach § 25b UStG / Art. 141 MwStSystRL):
-        1. Drei Unternehmer (A, B, C).
-        2. Alle in unterschiedlichen EU-Mitgliedstaaten registriert.
-        3. Lieferung geht direkt von A an C. (Wird durch Reihengeschäft impliziert)
-        4. B (mittlerer Unternehmer) verwendet für den Erwerb von A
-           keine USt-IdNr. des Abgangslandes (A's Land).
-        5. C (letzter Abnehmer) ist im Bestimmungsland für USt-Zwecke registriert. (Annahme hier)
-
-        Returns:
-                bool: True, wenn es sich wahrscheinlich um ein Dreiecksgeschäft handelt, sonst False.
+        Prüft, ob die Voraussetzungen für ein innergemeinschaftliches Dreiecksgeschäft
+        nach § 25b UStG (oder Art. 141 MwStSystRL) vorliegen.
         """
         firmen = self.get_ordered_chain_companies()
 
-        # 1. Genau drei Unternehmer?
+        # 1. Genau drei verschiedene Unternehmer beteiligt?
         if len(firmen) != 3:
             return False
 
-        a = firmen[0]  # Erster Lieferer
-        b = firmen[1]  # Mittlerer Unternehmer (Erwerber)
-        c = firmen[2]  # Letzter Abnehmer
+        A, B, C = firmen[0], firmen[1], firmen[2]
 
-        # Stelle sicher, dass der Transporteur bekannt ist
-        shipping_company = self.find_shipping_company()
-        if shipping_company is None:
-            # Wenn kein Transporteur definiert ist, kann es kein Dreiecksgeschäft sein
-            # (oder die Analyse ist unvollständig)
-            return False
-        # 6. Wird der Transport von C (letzter Abnehmer) veranlasst?
-        if shipping_company == c:
-            # Wenn C transportiert -> KEIN vereinfachtes Dreiecksgeschäft
+        # 2. Alle in unterschiedlichen EU-Mitgliedstaaten ansässig ODER
+        #    B verwendet USt-ID eines dritten Staates?
+        start_country = A.country
+        intermediate_country = B.country
+        # NEU: Prüfe die *verwendete* USt-ID von B
+        intermediate_vat_country = (
+            B.new_country
+            if B.changed_vat and B.new_country and B.new_country.EU
+            else intermediate_country  # Fallback auf Heimatland, wenn keine abw. EU-ID
+        )
+        end_country = C.country
+
+        # Alle müssen EU-Länder sein
+        if not (start_country.EU and intermediate_vat_country.EU and end_country.EU):
             return False
 
-        # 2. Alle in der EU?
-        if not (a.country.EU and b.country.EU and c.country.EU):
-            return False
-
-        # 3. Alle in unterschiedlichen EU-Mitgliedstaaten?
+        # Die drei relevanten Länder müssen unterschiedlich sein
         if (
-            a.country.code == b.country.code
-            or b.country.code == c.country.code
-            or a.country.code == c.country.code
+            start_country == intermediate_vat_country
+            or start_country == end_country
+            or intermediate_vat_country == end_country
         ):
             return False
 
-        # 4. Verwendet B (Mittlerer) eine USt-Id des Abgangslandes (A)?
-        #    Wenn B eine abweichende ID nutzt, darf es nicht die von A sein.
-        if b.changed_vat and b.new_country:
-            if b.new_country.code == a.country.code:
-                # B tritt mit USt-Id des Abgangslandes auf -> KEIN Dreiecksgeschäft (i.S.d. Vereinfachung)
+        # 3. Warenbewegung direkt von A nach C?
+        #    Wir prüfen, ob der Transport von A oder B (als Abnehmer von A)
+        #    oder C (als Abnehmer von B, was aber selten vorkommt und oft die Regel bricht)
+        #    initiiert wird und im Land von C endet.
+        #    Die genaueste Prüfung wäre über die Lieferungen, aber eine Plausibilitätsprüfung reicht hier oft.
+        #    Stellen wir sicher, dass die bewegte Lieferung A->B oder B->C ist und im Land von C endet.
+        if not self.lieferungen:
+            # Berechnung muss vorher gelaufen sein
+            print("WARNUNG: Lieferungen nicht berechnet für Dreiecksprüfung.")
+            return False  # Sicherer Fallback
+
+        moved_delivery = next((l for l in self.lieferungen if l.is_moved_supply), None)
+        if not moved_delivery:
+            return False  # Keine bewegte Lieferung gefunden
+
+        # Die Warenbewegung muss im Land von C enden
+        # (Das wird indirekt geprüft, da der Ort der ruhenden Lieferung B->C im Land von C liegt)
+        stationary_delivery_B_C = next(
+            (
+                l
+                for l in self.lieferungen
+                if not l.is_moved_supply and l.lieferant == B and l.kunde == C
+            ),
+            None,
+        )
+        if (
+            not stationary_delivery_B_C
+            or stationary_delivery_B_C.place_of_supply != end_country
+        ):
+            # Wenn B->C bewegt ist ODER Ort von B->C nicht im Endland liegt -> kein Dreieck
+            # (Ausnahme: B transportiert als Lieferer -> B->C bewegt -> kein Dreieck)
+            if (
+                moved_delivery.lieferant == B and moved_delivery.kunde == C
+            ):  # Fall B->C bewegt
                 return False
-        # Wenn B keine abweichende ID nutzt (Standardfall), ist die Bedingung erfüllt.
+            # Fall A->B bewegt, aber Ort B->C nicht im Endland -> kein Dreieck
+            if (
+                moved_delivery.lieferant == A
+                and moved_delivery.kunde == B
+                and (
+                    not stationary_delivery_B_C
+                    or stationary_delivery_B_C.place_of_supply != end_country
+                )
+            ):
+                return False
+
+        # 4. B (Erwerber) verwendet USt-ID eines anderen Staates als Abgangsland (A) und Bestimmungsland (C)?
+        #    Dies wurde bereits oben bei der Prüfung der drei unterschiedlichen Länder (start_country, intermediate_vat_country, end_country) sichergestellt.
+
+        # 5. C (letzter Abnehmer) ist im Bestimmungsland (end_country) für USt registriert?
+        #    Nehmen wir hier vereinfachend an, dass C im eigenen Land registriert ist.
+        #    Eine explizite Prüfung der Registrierung wäre genauer.
+
+        # 6. Bewegte Lieferung ist A->B und steuerfreie IG Lieferung?
+        #    Oder B->C ist bewegt (dann kein Dreieck nach §25b)
+        if moved_delivery.lieferant == A and moved_delivery.kunde == B:
+            if moved_delivery.vat_treatment != VatTreatmentType.EXEMPT_IC_SUPPLY:
+                # Wenn A->B bewegt, aber keine steuerfreie IG-Lieferung -> kein Dreieck
+                return False
+            # Zusätzliche Prüfung: Verwendet B für den Erwerb wirklich die geprüfte ID?
+            # Die Logik in determine_vat_treatment sollte sicherstellen, dass EXEMPT_IC_SUPPLY
+            # nur gesetzt wird, wenn B die korrekte ID (nicht Abgangsland) verwendet.
+        elif moved_delivery.lieferant == B and moved_delivery.kunde == C:
+            # Wenn B->C bewegt ist (B transportiert als Lieferer), ist es kein Dreieck nach §25b
+            return False
+        else:
+            # Sollte nicht vorkommen bei 3 Firmen
+            return False
 
         # Wenn alle Prüfungen bestanden wurden:
         return True
@@ -635,6 +685,9 @@ class Transaktion:
                 # Die Vereinfachung erspart ihm die Registrierung in A's und C's Land
                 if b.country.EU:
                     registration_needs[b].add(b.country)
+                # 2. Registrierung im Land der verwendeten USt-ID (falls abweichend & EU)
+                if b.changed_vat and b.new_country and b.new_country.EU:
+                    registration_needs[b].add(b.new_country)
 
                 # C (Letzter Abnehmer) muss in seinem Land (EU) registriert sein (für Erwerb/RC)
                 if c.country.EU:
