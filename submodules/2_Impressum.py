@@ -20,7 +20,7 @@ Lars Kusch
 Gustav-Adolf-Straße 13  
 95444 Bayreuth  
 
-## Streitschlichtung (Bitte prüfen und ggf. anpassen):
+## Streitschlichtung:
 
 Die Europäische Kommission stellt eine Plattform zur Online-Streitbeilegung (OS) bereit: https://ec.europa.eu/consumers/odr.  
 Meine E-Mail-Adresse finden Sie oben im Impressum. 
