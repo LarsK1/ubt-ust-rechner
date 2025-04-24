@@ -495,18 +495,18 @@ def Analyse_1():
         transaction: Transaktion = st.session_state["transaction"]
 
         st.title("USt-Reihengeschäfte - Analyse")
-        is_triangle = transaction.is_triangular_transaction()
-        if is_triangle:
-            st.success(
-                """**Dreiecksgeschäft erkannt!**
-				Die Voraussetzungen für die Vereinfachungsregelung nach § 25b UStG / Art. 141 MwStSystRL scheinen erfüllt zu sein.
-				Beachten Sie die besonderen Rechnungslegungs- und Meldepflichten.
-				""",
-                icon="🔺",
-            )
         try:
             # Berechnung durchführen (nur einmal)
             alle_lieferungen: list[Lieferung] = transaction.calculate_delivery_and_vat()
+            is_triangle = transaction.is_triangular_transaction()
+            if is_triangle:
+                st.success(
+                    """**Dreiecksgeschäft erkannt!**
+					Die Voraussetzungen für die Vereinfachungsregelung nach § 25b UStG / Art. 141 MwStSystRL scheinen erfüllt zu sein.
+					Beachten Sie die besonderen Rechnungslegungs- und Meldepflichten.
+					""",
+                    icon="🔺",
+                )
             dot_analyse = Digraph(
                 comment="Analyse Reihengeschäft", graph_attr={"rankdir": "LR"}
             )
@@ -518,6 +518,9 @@ def Analyse_1():
                 for company in firmen_im_graph:
                     # Basis-Label wie in der Eingabe
                     company_text = f"{company.get_role_name(True)}\n{company.country.name} ({company.country.code})"
+                    if company.country.EU:
+                        company_text += ", EU"
+
                     if company.changed_vat and company.new_country:
                         company_text += f"\nabw. USt-ID: {company.new_country.code}"
                     s.node(str(company.identifier), company_text)
@@ -541,7 +544,6 @@ def Analyse_1():
                     label=rechnungs_label,
                     color="orange",  # Farbe für Rechnungen
                     fontsize="10",
-                    # constraint='false' # Kann helfen, Layout zu entzerren, wenn Kanten sich kreuzen
                 )
 
                 # --- Kante für Ruhende Lieferung ---
@@ -554,7 +556,6 @@ def Analyse_1():
                         color="grey",  # Andere Farbe für ruhende Lieferung
                         style="dashed",  # Gestrichelt zur Unterscheidung
                         fontsize="9",  # Etwas kleiner
-                        # constraint='false' # Kann helfen, Layout zu entzerren
                     )
                 else:
                     # Merke dir die bewegte Lieferung für die separaten Kanten
@@ -585,7 +586,7 @@ def Analyse_1():
                     color="green",  # Farbe für physischen Transport
                     style="bold, dotted",  # Fett und gepunktet zur Unterscheidung
                     fontsize="10",
-                    splines="curved",  # Oder polyline, um Knoten zu umgehen
+                    splines="polyline",  # Oder polyline, um Knoten zu umgehen
                     # constraint='false' # Kann helfen, Layout zu entzerren
                 )
 
@@ -599,8 +600,9 @@ def Analyse_1():
                     (l for l in alle_lieferungen if l.is_moved_supply), None
                 )
                 if bewegte_lieferung:
-                    # Nutze die verbesserte __repr__ Methode der Lieferung
-                    st.markdown(f"- {bewegte_lieferung}")
+                    st.markdown(
+                        f"- {bewegte_lieferung.lieferant} -> {bewegte_lieferung.kunde}, Ort: {bewegte_lieferung.place_of_supply}, USt: {bewegte_lieferung.get_vat_treatment_display()}"
+                    )
                 else:
                     st.warning("Keine bewegte Lieferung gefunden.", icon="⚠️")
 
@@ -611,8 +613,9 @@ def Analyse_1():
                 ]
                 if ruhende_lieferungen:
                     for lief in ruhende_lieferungen:
-                        # Nutze die verbesserte __repr__ Methode der Lieferung
-                        st.markdown(f"- {lief}")
+                        st.markdown(
+                            f"- {lief.lieferant} -> {lief.kunde}, Ort: {lief.place_of_supply}, USt: {lief.get_vat_treatment_display()}"
+                        )
                 else:
                     st.info("Keine ruhenden Lieferungen vorhanden.")
 
