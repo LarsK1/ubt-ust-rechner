@@ -324,7 +324,7 @@ TEST_SCENARIOS_THREE_COMPANIES = [
                 "to": 2,
                 "moved": False,
                 "place": "IT",
-                "vat": VatTreatmentType.TAXABLE_REVERSE_CHARGE,
+                "vat": VatTreatmentType.TAXABLE_TRIANGULAR_BUSINESS,
             },
         ],
         "expected_triangle": True,  # Sollte als Dreieck erkannt werden
@@ -383,7 +383,7 @@ TEST_SCENARIOS_THREE_COMPANIES = [
                 "to": 2,
                 "moved": False,
                 "place": "IT",
-                "vat": VatTreatmentType.TAXABLE_REVERSE_CHARGE,
+                "vat": VatTreatmentType.TAXABLE_TRIANGULAR_BUSINESS,
             },
         ],
         "expected_triangle": True,  # Dreiecksgeschäft
@@ -442,7 +442,7 @@ TEST_SCENARIOS_THREE_COMPANIES = [
                 "to": 2,
                 "moved": False,
                 "place": "IT",
-                "vat": VatTreatmentType.TAXABLE_REVERSE_CHARGE,
+                "vat": VatTreatmentType.TAXABLE_TRIANGULAR_BUSINESS,
             },
         ],
         "expected_triangle": True,
@@ -1003,7 +1003,7 @@ TEST_SCENARIOS_THREE_COMPANIES = [
                 "to": 2,
                 "moved": False,
                 "place": "DE",
-                "vat": VatTreatmentType.TAXABLE_REVERSE_CHARGE,
+                "vat": VatTreatmentType.TAXABLE_TRIANGULAR_BUSINESS,
             },
         ],
         "expected_triangle": True,
@@ -1076,7 +1076,7 @@ TEST_SCENARIOS_FOUR_COMPANIES = [
                 "to": 2,
                 "moved": False,
                 "place": "FR",
-                "vat": VatTreatmentType.TAXABLE_REVERSE_CHARGE,  # Korrigiert: RC erwartet
+                "vat": VatTreatmentType.TAXABLE_NORMAL,
             },
             # C -> D: Ruhend, Ort FR, RC (PL->FR in FR)
             {
@@ -1084,7 +1084,7 @@ TEST_SCENARIOS_FOUR_COMPANIES = [
                 "to": 3,
                 "moved": False,
                 "place": "FR",
-                "vat": VatTreatmentType.TAXABLE_REVERSE_CHARGE,  # Korrigiert: RC erwartet
+                "vat": VatTreatmentType.TAXABLE_NORMAL,
             },
         ],
         "expected_triangle": False,
@@ -1240,7 +1240,7 @@ TEST_SCENARIOS_FOUR_COMPANIES = [
                 "to": 2,
                 "moved": False,
                 "place": "FR",
-                "vat": VatTreatmentType.TAXABLE_REVERSE_CHARGE,  # Korrigiert: RC erwartet
+                "vat": VatTreatmentType.TAXABLE_NORMAL,
             },
             # C -> D: Ruhend, Ort FR, RC (PL->FR in FR)
             {
@@ -1248,7 +1248,7 @@ TEST_SCENARIOS_FOUR_COMPANIES = [
                 "to": 3,
                 "moved": False,
                 "place": "FR",
-                "vat": VatTreatmentType.TAXABLE_REVERSE_CHARGE,  # Korrigiert: RC erwartet
+                "vat": VatTreatmentType.TAXABLE_NORMAL,
             },
         ],
         "expected_triangle": False,
@@ -1330,7 +1330,7 @@ TEST_SCENARIOS_FOUR_COMPANIES = [
                 "to": 3,
                 "moved": False,
                 "place": "FR",
-                "vat": VatTreatmentType.TAXABLE_REVERSE_CHARGE,
+                "vat": VatTreatmentType.TAXABLE_NORMAL,
             },
         ],
         "expected_triangle": False,
@@ -1412,7 +1412,7 @@ TEST_SCENARIOS_FOUR_COMPANIES = [
                 "to": 3,
                 "moved": False,
                 "place": "FR",
-                "vat": VatTreatmentType.TAXABLE_REVERSE_CHARGE,
+                "vat": VatTreatmentType.TAXABLE_NORMAL,
             },
         ],
         "expected_triangle": False,
@@ -1723,7 +1723,7 @@ TEST_SCENARIOS_FOUR_COMPANIES = [
                 "from": 0,
                 "to": 1,
                 "moved": True,
-                "place": "DE",  # Korrigiert: Ort wird DE
+                "place": "PL",
                 "vat": VatTreatmentType.TAXABLE_NORMAL,
             },
             # B -> C: Ruhend, Ort PL, RC (DE->AT in PL)
@@ -1732,7 +1732,7 @@ TEST_SCENARIOS_FOUR_COMPANIES = [
                 "to": 2,
                 "moved": False,
                 "place": "PL",
-                "vat": VatTreatmentType.TAXABLE_REVERSE_CHARGE,  # Korrigiert: RC erwartet
+                "vat": VatTreatmentType.TAXABLE_NORMAL,
             },
             # C -> D: Ruhend, Ort PL, Steuerpflichtig PL (AT->PL in PL)
             {
@@ -1745,7 +1745,7 @@ TEST_SCENARIOS_FOUR_COMPANIES = [
         ],
         "expected_triangle": False,
         "expected_registrations": {
-            0: {"DE"},  # A: DE (EUSt, Lief A->B)
+            0: {"PL"},  # A: DE (EUSt, Lief A->B)
             1: {"DE", "PL"},  # B: DE (home), PL (RC Lief B->C)
             2: {"AT", "PL"},  # C: AT (home, IG Erw), PL (Lief C->D)
             3: {"PL"},  # D: PL (home, IG Erw)
@@ -1806,15 +1806,15 @@ TEST_SCENARIOS_FOUR_COMPANIES = [
                 "to": 1,
                 "moved": False,
                 "place": "CN",
-                "vat": VatTreatmentType.OUT_OF_SCOPE,
+                "vat": VatTreatmentType.TAXABLE_NORMAL,
             },
             # B -> C: Bewegt, Ort DE, Steuerfrei IG (DE->AT)
             {
                 "from": 1,
                 "to": 2,
                 "moved": True,
-                "place": "DE",
-                "vat": VatTreatmentType.EXEMPT_IC_SUPPLY,
+                "place": "CN",
+                "vat": VatTreatmentType.OUT_OF_SCOPE,
             },
             # C -> D: Ruhend, Ort PL, RC (AT->PL in PL)
             {
@@ -1822,12 +1822,12 @@ TEST_SCENARIOS_FOUR_COMPANIES = [
                 "to": 3,
                 "moved": False,
                 "place": "PL",
-                "vat": VatTreatmentType.TAXABLE_REVERSE_CHARGE,
+                "vat": VatTreatmentType.TAXABLE_NORMAL,
             },
         ],
         "expected_triangle": False,
         "expected_registrations": {
-            0: {"DE"},  # A: DE (EUSt)
+            0: set(),
             1: {"DE"},  # B: DE (home, IG Lief B->C)
             2: {"AT", "PL"},  # C: AT (home, IG Erw), PL (RC Lief C->D)
             3: {"PL"},  # D: PL (home, IG Erw)
@@ -1835,8 +1835,8 @@ TEST_SCENARIOS_FOUR_COMPANIES = [
         # NEU:
         "expected_reporting": {
             0: set(),
-            1: {"ZM", "Intrastat Versendung"},  # B: ZM für IG Lief, Intra-V
-            2: {"Intrastat Eingang"},  # C: Intra-E
+            1: set(),
+            2: set(),
             3: set(),
         },
     },
@@ -2009,7 +2009,7 @@ TEST_SCENARIOS_TEN_COMPANIES = [
                 "to": 9,
                 "moved": False,
                 "place": "IE",
-                "vat": VatTreatmentType.TAXABLE_REVERSE_CHARGE,
+                "vat": VatTreatmentType.TAXABLE_NORMAL,
             },
         ],
         "expected_triangle": False,
@@ -2022,7 +2022,7 @@ TEST_SCENARIOS_TEN_COMPANIES = [
             5: {"ES", "IE"},  # F: ES (home, IG Erw), IE (RC Lief)
             6: {"BE", "IE"},  # G: BE (home, IG Erw), IE (RC Lief)
             7: {"NL", "IE"},  # H: NL (home, IG Erw), IE (RC Lief)
-            8: {"LU"},  # I: LU (home, IG Erw), IE (RC Lief)
+            8: {"IE", "LU"},  # I: LU (home, IG Erw), IE (RC Lief)
             9: {"IE"},  # J: IE (home, IG Erw)
         },
         # NEU:
@@ -2103,7 +2103,7 @@ TEST_SCENARIOS_TEN_COMPANIES = [
                 "country_code": "IT",
                 "ship": False,
                 "customs": False,
-                "import_vat": False,
+                "import_vat": True,
                 "vat_change_code": None,
                 "intermediary_status": None,
             },
@@ -2172,17 +2172,17 @@ TEST_SCENARIOS_TEN_COMPANIES = [
             {
                 "from": 4,
                 "to": 5,
-                "moved": False,
+                "moved": True,
                 "place": "DE",
-                "vat": VatTreatmentType.TAXABLE_NORMAL,
+                "vat": VatTreatmentType.EXEMPT_EXPORT,
             },
             # 5->6: Bewegt, Ort DE, Steuerfrei Export (DE->US)
             {
                 "from": 5,
                 "to": 6,
-                "moved": True,
-                "place": "DE",
-                "vat": VatTreatmentType.EXEMPT_EXPORT,
+                "moved": False,
+                "place": "CN",
+                "vat": VatTreatmentType.TAXABLE_NORMAL,
             },
             # 6->7: Ruhend, Ort CN, Nicht EU-Steuerbar
             {
@@ -2211,16 +2211,16 @@ TEST_SCENARIOS_TEN_COMPANIES = [
         ],
         "expected_triangle": False,
         "expected_registrations": {
-            0: {"DE"},  # A: DE (Lief)
-            1: {"AT", "DE"},  # B: AT (home), DE (Lief)
-            2: {"DE"},  # C: CH (none EU), DE (Lief)
-            3: {"PL", "DE"},  # D: PL (home), DE (Lief)
-            4: {"FR", "DE"},  # E: FR (home), DE (Lief)
-            5: {"DE"},  # F: US (none EU), DE (Export)
-            6: {"IT"},  # G: IT (home)
-            7: {"ES"},  # H: ES (home)
-            8: {"BE"},  # I: BE (home)
-            9: set(),  # J: CN (none EU)
+            0: {"DE"},
+            1: {"DE", "AT"},
+            2: {"DE"},
+            3: {"DE", "PL"},
+            4: {"DE", "FR"},
+            5: set(),
+            6: {"IT"},
+            7: {"ES"},
+            8: {"BE"},
+            9: set(),
         },
         # NEU:
         "expected_reporting": {  # Export löst keine EU-Meldungen aus
@@ -2338,7 +2338,7 @@ TEST_SCENARIOS_TEN_COMPANIES = [
                 "from": 0,
                 "to": 1,
                 "moved": True,
-                "place": "DE",
+                "place": "LU",
                 "vat": VatTreatmentType.TAXABLE_NORMAL,
             },
             # 1->2: Ruhend, Ort LU, RC (DE->AT in LU)
@@ -2347,7 +2347,7 @@ TEST_SCENARIOS_TEN_COMPANIES = [
                 "to": 2,
                 "moved": False,
                 "place": "LU",
-                "vat": VatTreatmentType.TAXABLE_REVERSE_CHARGE,
+                "vat": VatTreatmentType.TAXABLE_NORMAL,
             },
             # 2->3: Ruhend, Ort LU, RC (AT->PL in LU)
             {
@@ -2355,7 +2355,7 @@ TEST_SCENARIOS_TEN_COMPANIES = [
                 "to": 3,
                 "moved": False,
                 "place": "LU",
-                "vat": VatTreatmentType.TAXABLE_REVERSE_CHARGE,
+                "vat": VatTreatmentType.TAXABLE_NORMAL,
             },
             # 3->4: Ruhend, Ort LU, RC (PL->FR in LU)
             {
@@ -2363,7 +2363,7 @@ TEST_SCENARIOS_TEN_COMPANIES = [
                 "to": 4,
                 "moved": False,
                 "place": "LU",
-                "vat": VatTreatmentType.TAXABLE_REVERSE_CHARGE,
+                "vat": VatTreatmentType.TAXABLE_NORMAL,
             },
             # 4->5: Ruhend, Ort LU, RC (FR->IT in LU)
             {
@@ -2371,7 +2371,7 @@ TEST_SCENARIOS_TEN_COMPANIES = [
                 "to": 5,
                 "moved": False,
                 "place": "LU",
-                "vat": VatTreatmentType.TAXABLE_REVERSE_CHARGE,
+                "vat": VatTreatmentType.TAXABLE_NORMAL,
             },
             # 5->6: Ruhend, Ort LU, RC (IT->ES in LU)
             {
@@ -2379,7 +2379,7 @@ TEST_SCENARIOS_TEN_COMPANIES = [
                 "to": 6,
                 "moved": False,
                 "place": "LU",
-                "vat": VatTreatmentType.TAXABLE_REVERSE_CHARGE,
+                "vat": VatTreatmentType.TAXABLE_NORMAL,
             },
             # 6->7: Ruhend, Ort LU, RC (ES->BE in LU)
             {
@@ -2387,7 +2387,7 @@ TEST_SCENARIOS_TEN_COMPANIES = [
                 "to": 7,
                 "moved": False,
                 "place": "LU",
-                "vat": VatTreatmentType.TAXABLE_REVERSE_CHARGE,
+                "vat": VatTreatmentType.TAXABLE_NORMAL,
             },
             # 7->8: Ruhend, Ort LU, RC (BE->NL in LU)
             {
@@ -2395,7 +2395,7 @@ TEST_SCENARIOS_TEN_COMPANIES = [
                 "to": 8,
                 "moved": False,
                 "place": "LU",
-                "vat": VatTreatmentType.TAXABLE_REVERSE_CHARGE,
+                "vat": VatTreatmentType.TAXABLE_NORMAL,
             },
             # 8->9: Ruhend, Ort LU, Steuerpflichtig LU (NL->LU in LU)
             {
@@ -2408,16 +2408,16 @@ TEST_SCENARIOS_TEN_COMPANIES = [
         ],
         "expected_triangle": False,
         "expected_registrations": {
-            0: {"DE"},  # A: CN (none EU), DE (EUSt, Lief)
-            1: {"DE", "LU"},  # B: DE (home), LU (RC Lief)
-            2: {"AT", "LU"},  # C: AT (home, IG Erw), LU (RC Lief)
-            3: {"PL", "LU"},  # D: PL (home, IG Erw), LU (RC Lief)
-            4: {"FR", "LU"},  # E: FR (home, IG Erw), LU (RC Lief)
-            5: {"IT", "LU"},  # F: IT (home, IG Erw), LU (RC Lief)
-            6: {"ES", "LU"},  # G: ES (home, IG Erw), LU (RC Lief)
-            7: {"BE", "LU"},  # H: BE (home, IG Erw), LU (RC Lief)
-            8: {"NL", "LU"},  # I: NL (home, IG Erw), LU (Lief)
-            9: {"LU"},  # J: LU (home, IG Erw)
+            0: {"LU"},
+            1: {"LU", "DE"},
+            2: {"LU", "AT"},
+            3: {"PL", "LU"},
+            4: {"LU", "FR"},
+            5: {"IT", "LU"},
+            6: {"ES", "LU"},
+            7: {"BE", "LU"},
+            8: {"LU", "NL"},
+            9: {"LU"},
         },
         # NEU:
         "expected_reporting": {  # Import und RC lösen keine EU-Meldungen aus

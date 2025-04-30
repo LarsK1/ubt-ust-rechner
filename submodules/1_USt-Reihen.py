@@ -548,7 +548,7 @@ def Analyse_1():
 
                 # --- Kante für Ruhende Lieferung ---
                 if not lief.is_moved_supply:
-                    ruhend_label = f"ruhende Lieferung\nOrt: {lief.place_of_supply.code if lief.place_of_supply else '?'}"
+                    ruhend_label = f"ruhende Lieferung\n"
                     dot_analyse.edge(
                         str(lief.lieferant.identifier),
                         str(lief.kunde.identifier),
@@ -563,7 +563,7 @@ def Analyse_1():
 
             # 3. Kante für die RECHTLICH bewegte Lieferung (BLAU)
             if bewegte_lieferung_gefunden:
-                bewegte_label = f"bewegte Lieferung\nOrt: {bewegte_lieferung_gefunden.place_of_supply.code if bewegte_lieferung_gefunden.place_of_supply else '?'}"
+                bewegte_label = f"bewegte Lieferung"
                 dot_analyse.edge(
                     # Von Lieferant zu Kunde DIESER Lieferung
                     str(bewegte_lieferung_gefunden.lieferant.identifier),
