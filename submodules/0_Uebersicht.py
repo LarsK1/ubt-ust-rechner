@@ -43,3 +43,5 @@ else:
     ):
         del st.session_state["HaftungsauschlussAkzeptiert"]
         st.rerun()
+    if st.button("Zum Rechner"):
+        st.switch_page("submodules/1_USt-Reihen.py")

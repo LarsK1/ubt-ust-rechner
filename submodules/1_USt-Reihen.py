@@ -529,7 +529,7 @@ def Analyse_1():
             bewegte_lieferung_gefunden: Lieferung | None = None
             for lief in alle_lieferungen:
                 # --- Rechnungskante
-                rechnungs_label = f"Rechnung:\n{lief.get_vat_treatment_display()}"
+                rechnungs_label = f"{lief.get_vat_treatment_display()}"
                 if (
                     lief.invoice_note
                     and "Steuerfrei" not in lief.invoice_note

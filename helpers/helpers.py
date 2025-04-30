@@ -27,6 +27,7 @@ class VatTreatmentType(Enum):
     TAXABLE_REVERSE_CHARGE = (
         auto()
     )  # Steuerpflichtig, Kunde schuldet USt (Reverse Charge)
+    TAXABLE_TRIANGULAR_BUSINESS = auto()
     EXEMPT_IC_SUPPLY = auto()  # Steuerfrei (Innergemeinschaftliche Lieferung)
     EXEMPT_EXPORT = auto()  # Steuerfrei (Ausfuhr)
     NOT_TAXABLE = auto()  # Nicht steuerbar (im betrachteten Land)
@@ -187,11 +188,17 @@ class Lieferung:
     Repräsentiert eine einzelne Lieferung innerhalb eines Reihengeschäfts.
     """
 
-    def __init__(self, lieferant: Handelsstufe, kunde: Handelsstufe):
+    def __init__(
+        self,
+        lieferant: Handelsstufe,
+        kunde: Handelsstufe,
+        transaction=None,
+    ):
         self.lieferant = lieferant
         self.kunde = kunde
         self.is_moved_supply: bool = False
         self.place_of_supply: [Country] = None
+        self.transaction = transaction
         self.vat_treatment: VatTreatmentType = VatTreatmentType.UNKNOWN
         self.invoice_note: [str] = None  # Hinweis für die Rechnung
 
@@ -212,6 +219,8 @@ class Lieferung:
         elif treatment == VatTreatmentType.TAXABLE_REVERSE_CHARGE:
             # Der Hinweis auf RC reicht meist, Ort ist implizit der des Kunden
             return f"Reverse Charge ({place_code})"
+        elif treatment == VatTreatmentType.TAXABLE_TRIANGULAR_BUSINESS:
+            return f"Dreiecksgeschäft ({place_code})"
         elif treatment == VatTreatmentType.EXEMPT_IC_SUPPLY:
             return "Steuerfrei (IG)"
         elif treatment == VatTreatmentType.EXEMPT_EXPORT:
@@ -320,7 +329,6 @@ class Lieferung:
             else:
                 # Lieferant (Nicht-EU) schuldet EUSt NICHT.
                 # Prüfe auf Reverse Charge (§13b UStG)
-                # ... (bisherige Logik für Reverse Charge oder Normal bei Nicht-EU-Lieferant) ...
                 kunde_is_taxable_person_in_place = (
                     kunde_country.EU and kunde_country == place
                 )
@@ -340,7 +348,7 @@ class Lieferung:
             # Prüfung auf Dreiecksgeschäft ---
             is_triangle = False
             # Stelle sicher, dass das Lieferungsobjekt eine Referenz zur Transaktion hat
-            if hasattr(self, "transaction") and self.transaction:
+            if self.transaction:
                 try:
                     # Rufe die Prüfmethode der Transaktion auf
                     is_triangle = self.transaction.is_triangular_transaction()
@@ -409,43 +417,59 @@ class Lieferung:
         # --- Stationary Supply Logic ---
         else:  # Ruhende Lieferung
             if place.EU:
-                # --- Bestehende Logik für ruhende Lieferungen ---
-                # Prüfe auf Reverse Charge Möglichkeit (häufig bei ruhenden Lieferungen)
-                # Vereinfachte Annahme: RC wenn Lieferant nicht im Lieferort ansässig, Kunde aber schon (oder dort registriert)
-                # Eine genauere Prüfung (Unternehmerstatus etc.) wäre in der Praxis nötig.
 
-                # Erneute Prüfung auf Dreieck für spezifischen Hinweis bei RC
-                is_triangle_stationary_check = False
-                if hasattr(self, "transaction") and self.transaction:
-                    try:
-                        is_triangle_stationary_check = (
-                            self.transaction.is_triangular_transaction()
-                        )
-                    except:
-                        pass  # Fehler hier ignorieren
-
-                # Beispielhafte RC-Prüfung (vereinfacht)
-                # Benötigt ggf. eine Methode wie self.kunde.is_registered_in(place) in Handelsstufe
-                if (lieferant_country != place and kunde_country == place) or (
-                    lieferant_country != place
-                    and hasattr(self.kunde, "is_registered_in")
-                    and self.kunde.is_registered_in(place)
+                # 1. Prüfung: Ist dies die zweite Lieferung (B->C) in einem gültigen Dreiecksgeschäft?
+                is_triangle_and_second_delivery = False
+                if (
+                    self.transaction
+                    and len(self.transaction.get_ordered_chain_companies()) == 3
                 ):
-                    self.vat_treatment = VatTreatmentType.TAXABLE_REVERSE_CHARGE
-                    # Spezifischer Hinweis für die zweite Lieferung im Dreiecksgeschäft
-                    if (
-                        is_triangle_stationary_check
-                        and self.kunde == self.transaction.end_company
-                    ):
-                        self.invoice_note = f"Reverse Charge (Dreiecksgeschäft, Steuerschuldner: Kunde in {place.code})"
-                    else:
-                        self.invoice_note = (
-                            f"Reverse Charge (Steuerschuldner: Kunde in {place.code})"
+                    try:
+                        # Prüfe, ob die gesamte Transaktion ein Dreieck ist
+                        if self.transaction.is_triangular_transaction():
+                            # Prüfe, ob DIESE Lieferung die von B nach C ist
+                            firmen = self.transaction.get_ordered_chain_companies()
+                            if self.lieferant == firmen[1] and self.kunde == firmen[2]:
+                                is_triangle_and_second_delivery = True
+                    except Exception as e:
+                        # Optional: Fehler loggen, falls die Prüfung fehlschlägt
+                        print(
+                            f"DEBUG: Fehler bei Prüfung auf Dreiecksgeschäft für RC: {e}"
                         )
+                        pass  # Fehler hier ignorieren, fahre mit Standardprüfung fort
+
+                # 2. Steuerliche Behandlung festlegen
+                if is_triangle_and_second_delivery:
+                    # Fall 1: Zwingendes Reverse Charge wegen Dreiecksgeschäft (§ 25b UStG)
+                    self.vat_treatment = VatTreatmentType.TAXABLE_TRIANGULAR_BUSINESS
+                    self.invoice_note = f"Reverse Charge (Dreiecksgeschäft § 25b, Steuerschuldner: Kunde in {place.code})"
+
                 else:
-                    # Standardfall: Steuerpflichtig im Lieferort
-                    self.vat_treatment = VatTreatmentType.TAXABLE_NORMAL
-                    self.invoice_note = f"Steuerpflichtig in {place.code}"
+                    # Fall 2: Kein Dreiecksgeschäft (oder nicht die zweite Lieferung davon)
+                    # -> Prüfung auf Standard Reverse Charge (§ 13b UStG)
+
+                    # Vereinfachte Prüfung für § 13b (Lieferung von Waren):
+                    # Lieferant nicht im Lieferort ansässig, Kunde ist Unternehmer im Lieferort.
+                    # TODO: Diese Prüfung könnte verfeinert werden (z.B. Status des Kunden genauer prüfen)
+                    is_standard_rc_candidate = (
+                        lieferant_country != place
+                        and kunde_country == place
+                        # Ggf. weitere Bedingungen für § 13b hinzufügen, z.B.
+                        # and self.kunde.is_unternehmer() # Hypothetische Methode
+                    ) and False
+                    # Hier könnte man auch prüfen, ob der Kunde zwar nicht im 'place' ansässig ist,
+                    # aber dort eine USt-ID verwendet (was auch RC auslösen kann).
+
+                    if is_standard_rc_candidate:
+                        # Fall 2a: Standard Reverse Charge (§ 13b UStG) greift
+                        self.vat_treatment = VatTreatmentType.TAXABLE_REVERSE_CHARGE
+                        self.invoice_note = f"Reverse Charge (§ 13b UStG, Steuerschuldner: Kunde in {place.code})"
+                    else:
+                        # Fall 2b: Kein RC -> Normale Steuerpflicht im Lieferort
+                        self.vat_treatment = VatTreatmentType.TAXABLE_NORMAL
+                        self.invoice_note = f"Steuerpflichtig in {place.code}"
+                        # Hinweis: Wenn lieferant != place, aber kein RC greift,
+                        # müsste sich der Lieferant in 'place' registrieren.
             else:  # Ort der ruhenden Lieferung ist außerhalb der EU
                 self.vat_treatment = VatTreatmentType.OUT_OF_SCOPE
                 self.invoice_note = f"Nicht steuerbar (außerhalb EU: {place.code})"
@@ -623,20 +647,9 @@ class Transaktion:
         #    Nehmen wir hier vereinfachend an, dass C im eigenen Land registriert ist.
         #    Eine explizite Prüfung der Registrierung wäre genauer.
 
-        # 6. Bewegte Lieferung ist A->B und steuerfreie IG Lieferung?
-        #    Oder B->C ist bewegt (dann kein Dreieck nach §25b)
-        if moved_delivery.lieferant == A and moved_delivery.kunde == B:
-            if moved_delivery.vat_treatment != VatTreatmentType.EXEMPT_IC_SUPPLY:
-                # Wenn A->B bewegt, aber keine steuerfreie IG-Lieferung -> kein Dreieck
-                return False
-            # Zusätzliche Prüfung: Verwendet B für den Erwerb wirklich die geprüfte ID?
-            # Die Logik in determine_vat_treatment sollte sicherstellen, dass EXEMPT_IC_SUPPLY
-            # nur gesetzt wird, wenn B die korrekte ID (nicht Abgangsland) verwendet.
-        elif moved_delivery.lieferant == B and moved_delivery.kunde == C:
+        # 6. Oder B->C ist bewegt (dann kein Dreieck nach §25b)
+        if moved_delivery.lieferant == B and moved_delivery.kunde == C:
             # Wenn B->C bewegt ist (B transportiert als Lieferer), ist es kein Dreieck nach §25b
-            return False
-        else:
-            # Sollte nicht vorkommen bei 3 Firmen
             return False
 
         # Wenn alle Prüfungen bestanden wurden:
@@ -845,7 +858,7 @@ class Transaktion:
         for i in range(len(firmen) - 1):
             lieferant = firmen[i]
             kunde = firmen[i + 1]
-            self.lieferungen.append(Lieferung(lieferant, kunde))
+            self.lieferungen.append(Lieferung(lieferant, kunde, transaction=self))
 
         # 4. Bewegte Lieferung zuordnen (§ 3 Abs. 6a UStG)
         if not self.lieferungen:  # Sicherstellen, dass Lieferungen existieren
